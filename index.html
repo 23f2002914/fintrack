@@ -6,6 +6,7 @@
 <title>fintrack — Personal Finance Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -231,14 +232,12 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 
   <div class="sidebar-balances">
     <div class="bal-label">Live Balances</div>
-    <div class="bal-row"><div class="bal-dot" style="background:var(--hdfc)"></div><div class="bal-name">HDFC</div><div class="bal-val" id="sb-hdfc">₹8,919</div></div>
-    <div class="bal-row"><div class="bal-dot" style="background:var(--kotak)"></div><div class="bal-name">Kotak</div><div class="bal-val" id="sb-kotak">₹251</div></div>
-    <div class="bal-row"><div class="bal-dot" style="background:var(--slice)"></div><div class="bal-name">Slice</div><div class="bal-val" id="sb-slice">₹789</div></div>
+    <div id="sidebar-bal-rows"></div>
     <div class="bal-row" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
       <div class="bal-name" style="font-weight:700;color:var(--text)">Total</div>
-      <div class="bal-val" id="sb-total" style="color:var(--green)">₹9,959</div>
+      <div class="bal-val" id="sb-total" style="color:var(--green)">—</div>
     </div>
-    <div style="font-size:10px;color:var(--text3);margin-top:6px;padding-bottom:16px;font-family:'JetBrains Mono',monospace">+ ₹500 cash</div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;padding-bottom:16px;font-family:'JetBrains Mono',monospace" id="cash-label"></div>
   </div>
 </nav>
 
@@ -248,27 +247,11 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 <!-- DASHBOARD -->
 <div class="page active" id="page-dashboard">
   <div class="page-header">
-    <div class="page-title">Dashboard <span>June '26</span></div>
-    <div class="page-sub">// 185 transactions loaded · May 4 – Jun 2, 2026</div>
+    <div class="page-title">Dashboard <span id="dash-period"></span></div>
+    <div class="page-sub" id="dash-sub">// loading...</div>
   </div>
 
-  <div class="acct-cards">
-    <div class="acct-card hdfc">
-      <div class="acct-name">HDFC Bank</div>
-      <div class="acct-bal">₹8,919.07</div>
-      <div class="acct-role">income account · main obligations</div>
-    </div>
-    <div class="acct-card kotak">
-      <div class="acct-name">Kotak 811</div>
-      <div class="acct-bal">₹251.05</div>
-      <div class="acct-role">daily spending account</div>
-    </div>
-    <div class="acct-card slice">
-      <div class="acct-name">Slice</div>
-      <div class="acct-bal">₹789.42</div>
-      <div class="acct-role">savings · daily interest</div>
-    </div>
-  </div>
+  <div class="acct-cards" id="acct-cards-container"></div>
 
   <div class="cards" id="dash-cards"></div>
 
@@ -379,7 +362,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
     <select id="filter-account" onchange="renderTransactions()" style="min-width:130px">
       <option value="">All Accounts</option>
-      <option>HDFC</option><option>Kotak 811</option><option>Slice</option>
     </select>
     <select id="filter-type" onchange="renderTransactions()" style="min-width:120px">
       <option value="">All Types</option>
@@ -387,8 +369,6 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
     </select>
     <select id="filter-month" onchange="renderTransactions()" style="min-width:120px">
       <option value="">All Months</option>
-      <option value="2026-05">May 2026</option>
-      <option value="2026-06">June 2026</option>
     </select>
     <input id="filter-search" placeholder="Search notes..." oninput="renderTransactions()" style="min-width:160px">
   </div>
@@ -417,8 +397,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   <div class="chart-wrap">
     <div class="chart-title">Import History</div>
     <div id="import-log" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);line-height:1.8">
-      <div style="color:var(--green)">✓ May 2026 — 163 transactions loaded (preloaded)</div>
-      <div style="color:var(--green)">✓ Jun 1–2 2026 — 22 transactions loaded (preloaded)</div>
+      <div style="color:var(--text3)">Loading import history...</div>
     </div>
   </div>
 </div>
@@ -430,35 +409,21 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 
 <script>
 // ═══════════════════════════════════════════════
-// DATA
+// SUPABASE CONFIG — replace with your keys
+// ═══════════════════════════════════════════════
+const SUPABASE_URL = 'https://bsudcgfvywvirquhasmd.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_VupLBPpq8QtWiWopZiuy9Q_CTu3SFU6';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ═══════════════════════════════════════════════
+// DATA (in-memory, loaded from Supabase on boot)
 // ═══════════════════════════════════════════════
 let TRANSACTIONS = [{"date":"2026-06-02","account":"Slice","category":"Financial expenses","note":"To frnd","amount":-50.0,"type":"Expenses","transfer":false},{"date":"2026-06-02","account":"Slice","category":"Refunds (tax, purchase)","note":"Snacks","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-06-02","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-06-02","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.15,"type":"Income","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Loan, interests","note":"Repayment to frnd","amount":-1000.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Loan, interests","note":"SnapMint EMI","amount":-440.97,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-25.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Financial expenses","note":"To mom","amount":-14500.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Stationery, tools","note":"","amount":-12.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":100.0,"type":"Income","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Financial expenses","note":"To frnd","amount":-50.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-85.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Rental income","note":"Rent from Chennai","amount":24500.0,"type":"Income","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.03,"type":"Income","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-90.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Fuel","note":"","amount":-300.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Financial expenses","note":"Paradox ID Cards","amount":-31840.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"TRANSFER","note":"For paradox id cards","amount":33000.0,"type":"Income","transfer":true},{"date":"2026-06-01","account":"Kotak 811","category":"TRANSFER","note":"For paradox id cards","amount":-33000.0,"type":"Expenses","transfer":true},{"date":"2026-06-01","account":"Kotak 811","category":"Financial expenses","note":"For paradox from Vignesh","amount":14000.0,"type":"Income","transfer":false},{"date":"2026-05-31","account":"Kotak 811","category":"Charges, Fees","note":"Annual Subscription for 811 super","amount":-499.0,"type":"Expenses","transfer":false},{"date":"2026-05-31","account":"Kotak 811","category":"Software, apps, games","note":"For webops","amount":-2738.78,"type":"Expenses","transfer":false},{"date":"2026-05-31","account":"Kotak 811","category":"Income","note":"From frnd for webops","amount":2740.0,"type":"Income","transfer":false},{"date":"2026-05-31","account":"Slice","category":"Food & Drinks","note":"Daily Intrest","amount":0.03,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Financial expenses","note":"To frnd","amount":-600.0,"type":"Expenses","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Refunds (tax, purchase)","note":"Cashback","amount":7.0,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Software, apps, games","note":"For claude","amount":-1995.17,"type":"Expenses","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Income","note":"From frnd for claude","amount":2600.0,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"TRANSFER","note":"","amount":20000.0,"type":"Income","transfer":true},{"date":"2026-05-30","account":"HDFC","category":"TRANSFER","note":"","amount":-20000.0,"type":"Expenses","transfer":true},{"date":"2026-05-30","account":"HDFC","category":"Loan, interests","note":"From dad for iitm paradox","amount":20000.0,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Slice","category":"Food & Drinks","note":"Daily Intrest","amount":0.03,"type":"Income","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"Public transport","note":"Bus from sastra to tvs tollgate","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"Refunds (tax, purchase)","note":"From frnd","amount":24.0,"type":"Income","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"TRANSFER","note":"","amount":130.0,"type":"Income","transfer":true},{"date":"2026-05-29","account":"HDFC","category":"TRANSFER","note":"","amount":-130.0,"type":"Expenses","transfer":true},{"date":"2026-05-29","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-45.0,"type":"Expenses","transfer":false},{"date":"2026-05-29","account":"Slice","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-28","account":"HDFC","category":"Food & Drinks","note":"Snacks from instamart","amount":-248.0,"type":"Expenses","transfer":false},{"date":"2026-05-28","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-28","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-27","account":"HDFC","category":"Software, apps, games","note":"For Spotify","amount":-69.0,"type":"Expenses","transfer":false},{"date":"2026-05-27","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-26","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-25","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-26.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Kotak 811","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Food & Drinks","note":"Lunch","amount":-280.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Public transport","note":"Bus from sastra to tvs tollgate","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Restaurant, fast-food","note":"Snacks","amount":-15.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Restaurant, fast-food","note":"Snacks","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Phone, cell phone","note":"Recharge for frnd","amount":-99.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.11,"type":"Income","transfer":false},{"date":"2026-05-24","account":"Slice","category":"Groceries","note":"Snacks from instamart","amount":-231.0,"type":"Expenses","transfer":false},{"date":"2026-05-24","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.15,"type":"Income","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-80.0,"type":"Expenses","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Phone, cell phone","note":"Daily Intrest","amount":0.16,"type":"Income","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Phone, cell phone","note":"Recharge for frnd","amount":-37.97,"type":"Expenses","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Food & Drinks","note":"Lunch","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Slice","category":"Refunds (tax, purchase)","note":"From frnd","amount":200.0,"type":"Income","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Public transport","note":"Bus from sastra to tvs tollgate","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-83.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Refunds (tax, purchase)","note":"Cashback","amount":9.0,"type":"Income","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.16,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.23,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Kotak 811","category":"Financial expenses","note":"UPI/MAHALAKSHMI V","amount":-400.0,"type":"Expenses","transfer":false},{"date":"2026-05-21","account":"Kotak 811","category":"Food & Drinks","note":"UPI/MPMMUTHU GENERA","amount":-70.0,"type":"Expenses","transfer":false},{"date":"2026-05-21","account":"Kotak 811","category":"Income","note":"UPI/MAHALAKSHMI V","amount":500.0,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Phone, cell phone","note":"Recharge for frnd","amount":-446.88,"type":"Expenses","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.26,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-20","account":"Kotak 811","category":"Transportation","note":"TNSTC bus","amount":-35.0,"type":"Expenses","transfer":false},{"date":"2026-05-20","account":"Slice","category":"Food & Drinks","note":"Chicken Biryani","amount":-220.0,"type":"Expenses","transfer":false},{"date":"2026-05-20","account":"HDFC","category":"Education, development","note":"IITM Fees","amount":-22612.98,"type":"Expenses","transfer":false},{"date":"2026-05-20","account":"HDFC","category":"Income","note":"For IITM Fees","amount":23000.0,"type":"Income","transfer":false},{"date":"2026-05-19","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-19","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-19","account":"Slice","category":"Loan, interests","note":"To frnd","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-19","account":"HDFC","category":"Charges, Fees","note":"Hdfc international transaction fee","amount":-1.98,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":20.0,"type":"Income","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Public transport","note":"Bus","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-10.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Holiday, trips, hotels","note":"Hotel","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Azhagesan restaurant","amount":-155.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Income","note":"Income","amount":20.0,"type":"Income","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Restaurant","amount":-180.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Charges, Fees","note":"Charges","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Food & Drinks","note":"Oracle Singapore charge","amount":-108.42,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Food & Drinks","note":"Oracle Singapore charge","amount":-108.42,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"Oracle Singapore refund","amount":108.42,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Electronics, accessories","note":"AWS India","amount":-2.0,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-60.0,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"AWS refund","amount":2.0,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"Oracle Singapore refund","amount":108.42,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"From Allen Daniel","amount":100.0,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-16","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-16","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":340.0,"type":"Income","transfer":false},{"date":"2026-05-16","account":"Kotak 811","category":"Income","note":"From Sahasrajith","amount":300.0,"type":"Income","transfer":false},{"date":"2026-05-15","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Software, apps, games","note":"Spotify","amount":-69.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Transportation","note":"TNSTC bus","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Food & Drinks","note":"Azhagesan restaurant","amount":-115.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-25.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Slice","category":"Financial expenses","note":"Transfer to kotak 811","amount":-700.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Slice","category":"Software, apps, games","note":"App Subscription","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"HDFC","category":"Financial expenses","note":"To mom","amount":-2450.0,"type":"Expenses","transfer":false},{"date":"2026-05-14","account":"HDFC","category":"Refunds (tax, purchase)","note":"Reimbursement from mom","amount":800.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":8.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-14","account":"HDFC","category":"Education, development","note":"Counselling Fees","amount":-500.0,"type":"Expenses","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Others","note":"UPI T Shrinivasan","amount":-2000.0,"type":"Expenses","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Income","note":"Kotak credit","amount":700.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Interests, dividends","note":"Cashback earned","amount":6.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Income","note":"Kotak credit","amount":2000.0,"type":"Income","transfer":false},{"date":"2026-05-13","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Fuel","note":"Petrol for bike","amount":-300.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Fuel","note":"Petrol","amount":-300.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Juice","amount":-75.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Chicken Kothu parota","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Tea and coffee","amount":-25.0,"type":"Expenses","transfer":false},{"date":"2026-05-12","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-12","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-76.0,"type":"Expenses","transfer":false},{"date":"2026-05-12","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-11","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-11","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":100.0,"type":"Income","transfer":false},{"date":"2026-05-11","account":"HDFC","category":"Public transport","note":"Bus SASTRA to TVS","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Taxi","note":"Rapido from Trichy junction","amount":-60.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Train Egmore to Trichy","amount":-140.65,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Food & Drinks","note":"Snacks for train","amount":-90.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Food & Drinks","note":"Coffee","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Platform ticket Egmore","amount":-9.7,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Koyambedu to Egmore metro","amount":-24.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Tambaram to Kundrathur","amount":-11.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Transportation","note":"Platform ticket Tambaram","amount":-9.7,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":7.0,"type":"Income","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Kilambakkam to Tambaram","amount":-19.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Kilambakkam to Tambaram","amount":-19.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Groceries","note":"Snacks for bus","amount":-75.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Health and beauty","note":"Hair band","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-50.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Food & Drinks","note":"Snacks for mom","amount":-32.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Refunds (tax, purchase)","note":"Refund","amount":422.0,"type":"Income","transfer":false},{"date":"2026-05-08","account":"HDFC","category":"Software, apps, games","note":"For Spotify","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-08","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-08","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-70.0,"type":"Expenses","transfer":false},{"date":"2026-05-07","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-07","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-130.0,"type":"Expenses","transfer":false},{"date":"2026-05-06","account":"HDFC","category":"Food & Drinks","note":"Coffee","amount":-55.0,"type":"Expenses","transfer":false},{"date":"2026-05-06","account":"HDFC","category":"Groceries","note":"Popcorn","amount":-56.0,"type":"Expenses","transfer":false},{"date":"2026-05-06","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-06","account":"Slice","category":"Refunds (tax, purchase)","note":"Cashback","amount":0.87,"type":"Income","transfer":false},{"date":"2026-05-06","account":"HDFC","category":"Groceries","note":"Snacks","amount":-193.86,"type":"Expenses","transfer":false},{"date":"2026-05-05","account":"Slice","category":"Financial expenses","note":"Repayment to frnd","amount":-500.0,"type":"Expenses","transfer":false},{"date":"2026-05-05","account":"HDFC","category":"Food & Drinks","note":"2 chapati","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-05","account":"Slice","category":"Refunds (tax, purchase)","note":"From frnd","amount":500.0,"type":"Income","transfer":false},{"date":"2026-05-05","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Refunds (tax, purchase)","note":"Reimbursement from mom","amount":3419.0,"type":"Income","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":7.0,"type":"Income","transfer":false},{"date":"2026-05-04","account":"Slice","category":"TRANSFER","note":"Savings","amount":3000.0,"type":"Income","transfer":true},{"date":"2026-05-04","account":"HDFC","category":"TRANSFER","note":"Savings","amount":-3000.0,"type":"Expenses","transfer":true},{"date":"2026-05-04","account":"HDFC","category":"Loan, interests","note":"Repayment to Anirudh","amount":-1000.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Financial expenses","note":"To mom","amount":-14500.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Groceries","note":"Banana","amount":-41.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Phone, cell phone","note":"Recharge for frnd","amount":-450.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Vehicle maintenance","note":"Bike service","amount":-1343.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Taxi","note":"Auto to TVS showroom","amount":-130.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":10.0,"type":"Income","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Education, development","note":"Claude Subscription","amount":-1000.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Public transport","note":"Bus for Chennai exam","amount":-1210.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Taxi","note":"Auto from TVS showroom","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Phone, cell phone","note":"Airtel Postpaid Recharge","amount":-94.27,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Loan, interests","note":"SnapMint EMI","amount":-1088.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Software, apps, games","note":"Software","amount":-1.0,"type":"Expenses","transfer":false}];
 
-// ── BILLS STATE ──
-let BILLS = [
-  {id:1,name:'Airtel Postpaid',amount:100,date:'2026-06-03',paid:false,urgent:true},
-  {id:2,name:'Jio Postpaid',amount:349,date:'2026-06-23',paid:false,urgent:false},
-  {id:3,name:'YouTube Premium',amount:89,date:'2026-06-26',paid:false,urgent:false},
-  {id:4,name:'Spotify',amount:69,date:'2026-06-27',paid:false,urgent:false},
-];
-
-// ── DEBT STATE ──
-let DEBTS = {
-  owe:[
-    {id:1,person:'Friend 1',total:1900,paid:0,monthly:1000,note:'Until ~Dec 2026'},
-    {id:2,person:'Friend 2',total:1500,paid:0,monthly:0,note:''},
-    {id:3,person:'Friend 3',total:2500,paid:0,monthly:0,note:''},
-    {id:4,person:'Dad',total:20000,paid:0,monthly:0,note:'Paradox repayment — due once IITM pays'},
-  ],
-  owed:[
-    {id:1,person:'Mom',total:2450,paid:0,monthly:0,note:'Owes you'},
-    {id:2,person:'Friend A',total:300,paid:0,monthly:0,note:'Owes you'},
-    {id:3,person:'Friend B',total:100,paid:0,monthly:0,note:'Owes you'},
-    {id:4,person:'Reimbursement',total:700,paid:0,monthly:0,note:'Pending reimbursement'},
-    {id:5,person:'IITM Paradox',total:17840,paid:0,monthly:0,note:'Expected Jun 4 evening'},
-  ]
-};
-
+// ── BILLS & DEBTS (loaded from Supabase) ──
+let BILLS = [];
+let DEBTS = { owe: [], owed: [] };
+let BALANCES = {}; // loaded from DB
 let billIdCounter = 10;
 let debtIdCounter = 20;
 
@@ -512,8 +477,33 @@ function initDashboard(){
   const days = 30;
   const avgDay = mayExp/days;
 
+  // Update dynamic header
+  const allDates=TRANSACTIONS.map(t=>t.date).filter(Boolean).sort();
+  const earliest=allDates[0]||'';const latest=allDates[allDates.length-1]||'';
+  const periodEl=document.getElementById('dash-period');
+  if(periodEl&&earliest) periodEl.textContent=earliest.slice(0,7).replace('-','/')+' – '+latest.slice(0,7).replace('-','/');
+  const subEl=document.getElementById('dash-sub');
+  if(subEl) subEl.textContent=`// ${TRANSACTIONS.length} transactions · ${earliest} to ${latest}`;
+
+  // Build dynamic account filter
+  const acctFilter=document.getElementById('filter-account');
+  if(acctFilter){
+    const accounts=[...new Set(TRANSACTIONS.map(t=>t.account))].sort();
+    acctFilter.innerHTML='<option value="">All Accounts</option>'+accounts.map(a=>`<option>${a}</option>`).join('');
+  }
+
+  // Build dynamic month filter
+  const monthFilter=document.getElementById('filter-month');
+  if(monthFilter){
+    const months=[...new Set(TRANSACTIONS.map(t=>t.date.slice(0,7)))].sort().reverse();
+    const monthNames={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
+    monthFilter.innerHTML='<option value="">All Months</option>'+months.map(m=>{
+      const [y,mo]=m.split('-'); return `<option value="${m}">${monthNames[mo]} ${y}</option>`;
+    }).join('');
+  }
+
   document.getElementById('dash-cards').innerHTML = `
-    <div class="card"><div class="card-label">All-time Expenses</div><div class="card-val neg">${fmt(totalExp)}</div><div class="card-sub">185 transactions</div></div>
+    <div class="card"><div class="card-label">All-time Expenses</div><div class="card-val neg">${fmt(totalExp)}</div><div class="card-sub">${TRANSACTIONS.length} transactions</div></div>
     <div class="card"><div class="card-label">All-time Income</div><div class="card-val pos">${fmt(totalInc)}</div><div class="card-sub">excl. transfers</div></div>
     <div class="card"><div class="card-label">Net P&L</div><div class="card-val ${net>=0?'pos':'neg'}">${net>=0?'+':'−'}${fmt(net)}</div><div class="card-sub">May–Jun combined</div></div>
     <div class="card"><div class="card-label">Avg/Day (May)</div><div class="card-val gold">${fmt(avgDay)}</div><div class="card-sub">28 tracked days</div></div>
@@ -643,23 +633,27 @@ function renderBills(){
   list.innerHTML=html;
 }
 
-function addBill(){
+async function addBill(){
   const name=document.getElementById('bill-name').value;
   const amt=parseFloat(document.getElementById('bill-amt').value);
   const date=document.getElementById('bill-date').value;
   if(!name||!amt||!date){toast('Fill all fields'); return;}
-  BILLS.push({id:++billIdCounter,name,amount:amt,date,paid:false});
+  const {data,error}=await sb.from('bills').insert({name,amount:amt,due_date:date,paid:false}).select().single();
+  if(error){toast('Error: '+error.message);return;}
+  BILLS.push({id:data.id,name,amount:amt,date,paid:false});
   document.getElementById('bill-name').value='';
   document.getElementById('bill-amt').value='';
   document.getElementById('bill-date').value='';
-  renderBills(); toast('Bill added');
+  renderBills(); toast('Bill added ✓');
 }
 
-function markBillPaid(id){
+async function markBillPaid(id){
+  await sb.from('bills').update({paid:true}).eq('id',id);
   const b=BILLS.find(b=>b.id===id);
   if(b){b.paid=true; renderBills(); toast(`${b.name} marked paid ✓`);}
 }
-function deleteBill(id){
+async function deleteBill(id){
+  await sb.from('bills').delete().eq('id',id);
   BILLS=BILLS.filter(b=>b.id!==id); renderBills(); toast('Bill removed');
 }
 
@@ -706,24 +700,35 @@ function renderDebts(){
   document.getElementById('owed-list').innerHTML=owedHtml;
 }
 
-function logPayment(type,id){
+async function logPayment(type,id){
   const amt=parseFloat(prompt('Amount paid (₹):'));
   if(isNaN(amt)||amt<=0) return;
   const d=DEBTS[type].find(d=>d.id===id);
-  if(d){d.paid=Math.min(d.total,d.paid+amt); renderDebts(); toast('Payment logged');}
+  if(d){
+    d.paid=Math.min(d.total,d.paid+amt);
+    await sb.from('debts').update({paid:d.paid}).eq('id',id);
+    renderDebts(); toast('Payment logged ✓');
+  }
 }
-function logReceived(id){
+async function logReceived(id){
   const d=DEBTS.owed.find(d=>d.id===id);
-  if(d){d.paid=d.total; renderDebts(); toast(`${d.person} — marked as received ✓`);}
+  if(d){
+    d.paid=d.total;
+    await sb.from('debts').update({paid:d.total}).eq('id',id);
+    renderDebts(); toast(`${d.person} — marked as received ✓`);
+  }
 }
-function removeDebt(type,id){
+async function removeDebt(type,id){
+  await sb.from('debts').delete().eq('id',id);
   DEBTS[type]=DEBTS[type].filter(d=>d.id!==id); renderDebts(); toast('Entry removed');
 }
-function addDebt(type){
+async function addDebt(type){
   const person=prompt('Person / description:'); if(!person) return;
   const total=parseFloat(prompt('Total amount (₹):')); if(isNaN(total)) return;
   const note=prompt('Note (optional, press Enter to skip):')||'';
-  DEBTS[type].push({id:++debtIdCounter,person,total,paid:0,monthly:0,note});
+  const {data,error}=await sb.from('debts').insert({direction:type,person,total,paid:0,monthly:0,note}).select().single();
+  if(error){toast('Error: '+error.message);return;}
+  DEBTS[type].push({id:data.id,person,total,paid:0,monthly:0,note});
   renderDebts(); toast('Added ✓');
 }
 
@@ -731,7 +736,7 @@ function addDebt(type){
 // ACCOUNT SPLIT
 // ═══════════════════════════════════════════════
 function renderSplit(){
-  const total = 9959; // current live total
+  const total = Object.values(BALANCES).reduce((s,v)=>s+v,0);
   const cash = 500;
 
   const recs = [
@@ -771,7 +776,7 @@ function renderSplit(){
     <div class="split-grid">
       <div class="split-card">
         <div class="split-title"><span style="color:var(--red)">●</span> Before split</div>
-        ${[['HDFC (income)',8919,'var(--hdfc)'],['Kotak (spending)',251,'var(--kotak)'],['Slice (savings)',789,'var(--slice)'],['Cash',500,'var(--text3)']].map(([n,v,c])=>`
+        ${[...Object.entries(BALANCES).map(([a,v])=>[a,v,acctColor(a)]),['Cash',cash,'var(--text3)']].map(([n,v,c])=>`
           <div class="split-row"><span class="split-name">${n}</span><span class="split-val" style="color:${c}">${fmt(v)}</span></div>
           <div class="split-bar"><div class="split-bar-fill" style="width:${Math.round(v/(total+cash)*100)}%;background:${c}"></div></div>
         `).join('')}
@@ -807,7 +812,9 @@ function renderSplit(){
 // PROGRESS
 // ═══════════════════════════════════════════════
 function renderProgress(){
-  const months=[{key:'2026-05',name:'May 2026'},{key:'2026-06',name:'June 2026 (partial)'}];
+  const monthNames2={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
+  const monthKeys=[...new Set(TRANSACTIONS.filter(t=>!t.transfer).map(t=>t.date.slice(0,7)))].sort();
+  const months=monthKeys.map(k=>{const[y,m]=k.split('-');return{key:k,name:monthNames2[m]+' '+y};});
   let html='';
   const netData=[];
   months.forEach(m=>{
@@ -867,7 +874,7 @@ function handleDrop(e){
 }
 function readCSV(file){
   const reader=new FileReader();
-  reader.onload=e=>{
+  reader.onload=async e=>{
     const text=e.target.result;
     const lines=text.trim().split('\n');
     const headers=lines[0].split(';').map(h=>h.trim());
@@ -888,24 +895,167 @@ function readCSV(file){
         transfer:row.transfer==='true'||row.transfer===true
       });
     }
-    // Merge — deduplicate by date+account+amount+note
+    // Deduplicate against existing
     const existing=new Set(TRANSACTIONS.map(t=>`${t.date}|${t.account}|${t.amount}|${t.note}`));
     const added=newTx.filter(t=>!existing.has(`${t.date}|${t.account}|${t.amount}|${t.note}`));
+    if(added.length===0){toast('No new transactions found'); return;}
+    // Detect new accounts from CSV and upsert into balances
+    const newAccounts=[...new Set(added.map(t=>t.account))].filter(a=>!BALANCES[a]);
+    for(const acc of newAccounts){
+      BALANCES[acc]=0;
+      await sb.from('balances').upsert({account:acc,balance:0,role:'imported account',updated_at:new Date().toISOString()},{onConflict:'account'});
+    }
+    if(newAccounts.length>0){
+      renderAccountCards();
+      updateSidebarBalances();
+      // Refresh account filter
+      const acctFilter=document.getElementById('filter-account');
+      if(acctFilter){
+        const accounts=[...new Set(TRANSACTIONS.map(t=>t.account)),...newAccounts].filter((v,i,a)=>a.indexOf(v)===i).sort();
+        acctFilter.innerHTML='<option value="">All Accounts</option>'+accounts.map(a=>`<option>${a}</option>`).join('');
+      }
+      toast(`New account(s) detected: ${newAccounts.join(', ')}`);
+    }
+    // Save to Supabase
+    toast(`Saving ${added.length} transactions...`);
+    const {error}=await sb.from('transactions').insert(added);
+    if(error){toast('DB error: '+error.message); console.error(error); return;}
+    // Merge into memory
     TRANSACTIONS=[...added,...TRANSACTIONS].sort((a,b)=>b.date.localeCompare(a.date));
     const logEl=document.getElementById('import-log');
     const d=new Date().toLocaleDateString();
-    logEl.innerHTML+=`<div style="color:var(--green)">✓ ${file.name} — ${added.length} new transactions merged (${d})</div>`;
-    toast(`✓ ${added.length} new transactions imported`);
-    // Reinit dashboard charts
-    setTimeout(()=>{ if(document.getElementById('page-dashboard').classList.contains('active')) location.reload(); },1000);
+    logEl.innerHTML+=`<div style="color:var(--green)">✓ ${file.name} — ${added.length} new transactions saved to DB (${d})</div>`;
+    toast(`✓ ${added.length} transactions saved`);
+    setTimeout(()=>{
+      initDashboard();
+      renderAccountCards();
+      // refresh month filter
+      const monthFilter=document.getElementById('filter-month');
+      if(monthFilter){
+        const monthNames={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
+        const months=[...new Set(TRANSACTIONS.map(t=>t.date.slice(0,7)))].sort().reverse();
+        monthFilter.innerHTML='<option value="">All Months</option>'+months.map(m=>{const[y,mo]=m.split('-');return `<option value="${m}">${monthNames[mo]} ${y}</option>`;}).join('');
+      }
+    },500);
   };
   reader.readAsText(file);
 }
 
 // ═══════════════════════════════════════════════
-// INIT
+// INIT — load all data from Supabase on boot
 // ═══════════════════════════════════════════════
-initDashboard();
+async function boot(){
+  // Show loading state
+  document.getElementById('dash-cards').innerHTML='<div style="color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:12px;padding:20px 0">Loading from database...</div>';
+
+  try {
+    // Load transactions
+    const {data:txData}=await sb.from('transactions').select('*').order('date',{ascending:false});
+    if(txData&&txData.length>0){
+      TRANSACTIONS=[...txData.map(t=>({
+        date:t.date,account:t.account,category:t.category||'',
+        note:t.note||'',amount:Number(t.amount),type:t.type||'',transfer:t.transfer||false
+      })),...TRANSACTIONS.filter(()=>false)]; // replace entirely with DB data
+    }
+
+    // Load bills
+    const {data:billData}=await sb.from('bills').select('*').order('due_date');
+    if(billData) BILLS=billData.map(b=>({id:b.id,name:b.name,amount:Number(b.amount),date:b.due_date,paid:b.paid}));
+
+    // Load debts
+    const {data:debtData}=await sb.from('debts').select('*').order('created_at');
+    if(debtData){
+      DEBTS.owe=debtData.filter(d=>d.direction==='owe').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
+      DEBTS.owed=debtData.filter(d=>d.direction==='owed').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
+    }
+
+    // Load balances
+    const {data:balData}=await sb.from('balances').select('*');
+    if(balData) balData.forEach(b=>{BALANCES[b.account]=Number(b.balance);});
+
+    // Update sidebar balances
+    updateSidebarBalances();
+
+    // Update import log
+    const txCount=TRANSACTIONS.length;
+    document.getElementById('import-log').innerHTML=`<div style="color:var(--green)">✓ Loaded ${txCount} transactions from database</div>`;
+
+  } catch(err){
+    console.error('Boot error:',err);
+    document.getElementById('import-log').innerHTML=`<div style="color:var(--red)">⚠ Could not connect to database. Check your Supabase keys in index.html</div>`;
+  }
+
+  initDashboard();
+}
+
+// Generate a stable colour for any account name
+function acctColor(name){
+  const map={'HDFC':'#c0392b','Kotak 811':'#00bcd4','Slice':'#e91e8c'};
+  if(map[name]) return map[name];
+  // deterministic colour for new accounts
+  let h=0; for(let c of name) h=(h*31+c.charCodeAt(0))&0xffff;
+  const hues=[210,160,280,40,330,80,190];
+  return `hsl(${hues[h%hues.length]},65%,52%)`;
+}
+
+// gradient pairs for account cards
+function acctGradient(name){
+  const map={
+    'HDFC':'linear-gradient(135deg,#7b0f0a,#c0392b)',
+    'Kotak 811':'linear-gradient(135deg,#006d7a,#00bcd4)',
+    'Slice':'linear-gradient(135deg,#8b0050,#e91e8c)'
+  };
+  if(map[name]) return map[name];
+  const col=acctColor(name);
+  return `linear-gradient(135deg,${col}aa,${col})`;
+}
+
+function updateSidebarBalances(){
+  const accounts=Object.keys(BALANCES);
+  const total=accounts.reduce((s,a)=>s+(BALANCES[a]||0),0);
+  const rowsEl=document.getElementById('sidebar-bal-rows');
+  if(rowsEl){
+    rowsEl.innerHTML=accounts.map(a=>`
+      <div class="bal-row">
+        <div class="bal-dot" style="background:${acctColor(a)}"></div>
+        <div class="bal-name">${a}</div>
+        <div class="bal-val" style="color:${(BALANCES[a]||0)>0?'var(--green)':'var(--red)'}">₹${Math.abs(BALANCES[a]||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      </div>`).join('');
+  }
+  const totEl=document.getElementById('sb-total');
+  if(totEl) totEl.textContent='₹'+total.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+
+function renderAccountCards(){
+  const container=document.getElementById('acct-cards-container');
+  if(!container) return;
+  const accounts=Object.keys(BALANCES);
+  // set grid cols dynamically
+  container.style.gridTemplateColumns=`repeat(${Math.min(accounts.length,4)},1fr)`;
+  container.innerHTML=accounts.map(a=>`
+    <div class="acct-card" style="${acctGradient(a)}">
+      <div class="acct-name">${a}</div>
+      <div class="acct-bal">₹${Math.abs(BALANCES[a]||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div class="acct-role" style="margin-top:8px;font-size:10px;opacity:0.5;cursor:pointer" onclick="promptUpdateBalance('${a}')">tap to update balance</div>
+    </div>`).join('');
+}
+
+async function promptUpdateBalance(account){
+  const val=parseFloat(prompt(\`Current balance for \${account} (₹):\`));
+  if(isNaN(val)) return;
+  await updateBalance(account,val);
+  renderAccountCards();
+}
+
+// Update balance in DB when user edits it
+async function updateBalance(account, newVal){
+  await sb.from('balances').update({balance:newVal, updated_at:new Date().toISOString()}).eq('account',account);
+  BALANCES[account]=newVal;
+  updateSidebarBalances();
+  toast(`${account} balance updated`);
+}
+
+boot();
 </script>
 </body>
 </html>
