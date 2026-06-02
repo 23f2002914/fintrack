@@ -506,9 +506,9 @@ function initDashboard(){
     <div class="card"><div class="card-label">All-time Expenses</div><div class="card-val neg">${fmt(totalExp)}</div><div class="card-sub">${TRANSACTIONS.length} transactions</div></div>
     <div class="card"><div class="card-label">All-time Income</div><div class="card-val pos">${fmt(totalInc)}</div><div class="card-sub">excl. transfers</div></div>
     <div class="card"><div class="card-label">Net P&L</div><div class="card-val ${net>=0?'pos':'neg'}">${net>=0?'+':'−'}${fmt(net)}</div><div class="card-sub">May–Jun combined</div></div>
-    <div class="card"><div class="card-label">Avg/Day (May)</div><div class="card-val gold">${fmt(avgDay)}</div><div class="card-sub">28 tracked days</div></div>
-    <div class="card"><div class="card-label">Jun spend so far</div><div class="card-val neg">${fmt(junExp)}</div><div class="card-sub">first 2 days</div></div>
-    <div class="card accent-border"><div class="card-label">Total Balance</div><div class="card-val pos">₹10,459</div><div class="card-sub">all accts + ₹500 cash</div></div>
+    <div class="card"><div class="card-label">Avg/Day</div><div class="card-val gold">${fmt(avgDay)}</div><div class="card-sub">${days} tracked days</div></div>
+    <div class="card"><div class="card-label">This month spend</div><div class="card-val neg">${fmt(junExp)}</div><div class="card-sub">current month</div></div>
+    <div class="card accent-border"><div class="card-label">Total Balance</div><div class="card-val pos">${fmt(Object.values(BALANCES).reduce((s,v)=>s+v,0))}</div><div class="card-sub">all accounts combined</div></div>
   `;
 
   // Category pie
@@ -526,15 +526,16 @@ function initDashboard(){
   const junInc=byMonth(inc,'2026-06').reduce((s,t)=>s+t.amount,0);
   new Chart(document.getElementById('monthBar'),{
     type:'bar',
-    data:{labels:['May 2026','Jun 2026 (partial)'],datasets:[
-      {label:'Income',data:[mayInc,junInc],backgroundColor:'rgba(39,174,96,0.7)',borderRadius:4,borderWidth:0},
-      {label:'Expenses',data:[mayExp,junExp],backgroundColor:'rgba(231,76,60,0.7)',borderRadius:4,borderWidth:0}
+    data:{labels:(()=>{const mn={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};return[...new Set(TRANSACTIONS.filter(t=>!t.transfer).map(t=>t.date.slice(0,7)))].sort().map(k=>{const[y,m]=k.split('-');return mn[m]+' '+y;});})(),datasets:[
+      {label:'Income',data:(()=>{return[...new Set(TRANSACTIONS.filter(t=>!t.transfer).map(t=>t.date.slice(0,7)))].sort().map(k=>byMonth(income(),k).reduce((s,t)=>s+t.amount,0));})(),backgroundColor:'rgba(39,174,96,0.7)',borderRadius:4,borderWidth:0},
+      {label:'Expenses',data:(()=>{return[...new Set(TRANSACTIONS.filter(t=>!t.transfer).map(t=>t.date.slice(0,7)))].sort().map(k=>byMonth(expenses(),k).reduce((s,t)=>s+Math.abs(t.amount),0));})(),backgroundColor:'rgba(231,76,60,0.7)',borderRadius:4,borderWidth:0}
     ]},
     options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#9896a0',font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#9896a0',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#9896a0',font:{size:10},callback:v=>'₹'+Math.round(v/1000)+'k'}}}}
   });
 
   // Daily line
-  const last30 = exp.filter(t=>t.date>='2026-05-03').sort((a,b)=>a.date.localeCompare(b.date));
+  const cutoff=new Date(); cutoff.setDate(cutoff.getDate()-30); const cutoffStr=cutoff.toISOString().slice(0,10);
+  const last30 = exp.filter(t=>t.date>=cutoffStr).sort((a,b)=>a.date.localeCompare(b.date));
   const dayMap={};
   last30.forEach(t=>{dayMap[t.date]=(dayMap[t.date]||0)+Math.abs(t.amount);});
   const dayKeys=Object.keys(dayMap).sort();
@@ -1025,8 +1026,9 @@ async function boot(){
     const {data:balData}=await sb.from('balances').select('*');
     if(balData) balData.forEach(b=>{BALANCES[b.account]=Number(b.balance);});
 
-    // Update sidebar balances
+    // Update sidebar balances and account cards
     updateSidebarBalances();
+    renderAccountCards();
 
     // Update import log
     const txCount=TRANSACTIONS.length;
@@ -1037,6 +1039,7 @@ async function boot(){
     document.getElementById('import-log').innerHTML=`<div style="color:var(--red)">⚠ Could not connect to database. Check your Supabase keys in index.html</div>`;
   }
 
+  renderAccountCards();
   initDashboard();
 }
 
