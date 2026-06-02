@@ -215,6 +215,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
     <div class="nav-label">Overview</div>
     <button class="nav-item active" onclick="showPage('dashboard')"><span class="icon">◈</span> Dashboard</button>
     <button class="nav-item" onclick="showPage('progress')"><span class="icon">▲</span> Progress</button>
+    <button class="nav-item" onclick="showPage('account-report')"><span class="icon">◎</span> Account Report</button>
   </div>
 
   <div class="nav-section">
@@ -402,6 +403,29 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
   </div>
 </div>
 
+<!-- ACCOUNT REPORT -->
+<div class="page" id="page-account-report">
+  <div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px">
+    <div>
+      <div class="page-title">Account <span id="ar-title">Report</span></div>
+      <div class="page-sub" id="ar-sub">// select an account to view</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <select id="ar-account" onchange="renderAccountReport()" style="min-width:140px">
+        <option value="">Select account...</option>
+      </select>
+      <select id="ar-month" onchange="renderAccountReport()" style="min-width:130px">
+        <option value="">All Months</option>
+      </select>
+      <button class="btn-sm btn-accent" onclick="downloadAccountReport()" style="padding:8px 16px">⬇ Download PDF</button>
+    </div>
+  </div>
+  <div id="ar-content">
+    <div style="color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:12px;padding:40px 0;text-align:center">Select an account above to view its report</div>
+  </div>
+</div>
+
+
 </main>
 </div>
 
@@ -462,6 +486,7 @@ function showPage(id){
   if(id==='debts') renderDebts();
   if(id==='split') renderSplit();
     if(id==='progress') renderProgress();
+  if(id==='account-report') initAccountReportSelectors();
 }
 
 // ═══════════════════════════════════════════════
@@ -990,12 +1015,268 @@ function renderAccountCards(){
   // set grid cols dynamically
   container.style.gridTemplateColumns=`repeat(${Math.min(accounts.length,4)},1fr)`;
   container.innerHTML=accounts.map(a=>`
-    <div class="acct-card" style="${acctGradient(a)}">
+    <div class="acct-card" style="${acctGradient(a)};cursor:pointer" onclick="openAccountReport('${a}')">
       <div class="acct-name">${a}</div>
       <div class="acct-bal">₹${Math.abs(BALANCES[a]||0).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
-      <div class="acct-role" style="margin-top:8px;font-size:10px;opacity:0.5;cursor:pointer" onclick="promptUpdateBalance('${a}')">tap to update balance</div>
+      <div class="acct-role" style="margin-top:8px;font-size:10px;opacity:0.5">tap to view report · <span onclick="event.stopPropagation();promptUpdateBalance('${a}')" style="text-decoration:underline;cursor:pointer">update balance</span></div>
     </div>`).join('');
 }
+
+// ═══════════════════════════════════════════════
+// ACCOUNT REPORT
+// ═══════════════════════════════════════════════
+function openAccountReport(account){
+  showPage('account-report');
+  initAccountReportSelectors();
+  setTimeout(()=>{
+    const sel = document.getElementById('ar-account');
+    if(sel){ sel.value = account; renderAccountReport(); }
+  }, 50);
+}
+
+function initAccountReportSelectors(){
+  const acctSel = document.getElementById('ar-account');
+  const monthSel = document.getElementById('ar-month');
+  if(!acctSel || !monthSel) return;
+
+  // populate accounts
+  const accounts = [...new Set(TRANSACTIONS.map(t=>t.account))].sort();
+  acctSel.innerHTML = '<option value="">Select account...</option>' +
+    accounts.map(a=>`<option value="${a}">${a}</option>`).join('');
+
+  // populate months
+  const mn={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
+  const months=[...new Set(TRANSACTIONS.map(t=>t.date.slice(0,7)))].sort().reverse();
+  monthSel.innerHTML = '<option value="">All Months</option>' +
+    months.map(m=>{const[y,mo]=m.split('-');return`<option value="${m}">${mn[mo]} ${y}</option>`;}).join('');
+}
+
+function renderAccountReport(){
+  const account = document.getElementById('ar-account').value;
+  const month = document.getElementById('ar-month').value;
+  const content = document.getElementById('ar-content');
+
+  if(!account){
+    content.innerHTML='<div style="color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:12px;padding:40px 0;text-align:center">Select an account above to view its report</div>';
+    return;
+  }
+
+  // filter transactions
+  let txns = TRANSACTIONS.filter(t=>t.account===account);
+  if(month) txns = txns.filter(t=>t.date.startsWith(month));
+  txns = txns.sort((a,b)=>b.date.localeCompare(a.date));
+
+  const exp = txns.filter(t=>!t.transfer&&t.type==='Expenses');
+  const inc = txns.filter(t=>!t.transfer&&t.type==='Income');
+  const transfers = txns.filter(t=>t.transfer);
+
+  const totalExp = exp.reduce((s,t)=>s+Math.abs(t.amount),0);
+  const totalInc = inc.reduce((s,t)=>s+t.amount,0);
+  const net = totalInc - totalExp;
+
+  // category breakdown
+  const catMap={};
+  exp.forEach(t=>{catMap[t.category]=(catMap[t.category]||0)+Math.abs(t.amount);});
+  const topCats = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,8);
+
+  // monthly breakdown (if all months selected)
+  const mn={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
+  const monthKeys = [...new Set(txns.map(t=>t.date.slice(0,7)))].sort();
+
+  // update header
+  const acctColor_val = acctColor(account);
+  document.getElementById('ar-title').textContent = account;
+  document.getElementById('ar-title').style.color = acctColor_val;
+  document.getElementById('ar-sub').textContent = `// ${txns.length} transactions · ${month ? (()=>{const[y,mo]=month.split('-');return mn[mo]+' '+y;})() : 'all time'}`;
+
+  // destroy old charts
+  ['ar-cat-pie','ar-monthly-bar','ar-daily-line'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){const c=Chart.getChart(el);if(c)c.destroy();}
+  });
+
+  content.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px" id="ar-print-area">
+      <div class="card"><div class="card-label">Total Income</div><div class="card-val pos">${fmt(totalInc)}</div><div class="card-sub">${inc.length} credits</div></div>
+      <div class="card"><div class="card-label">Total Expenses</div><div class="card-val neg">${fmt(totalExp)}</div><div class="card-sub">${exp.length} debits</div></div>
+      <div class="card"><div class="card-label">Net</div><div class="card-val ${net>=0?'pos':'neg'}">${net>=0?'+':''}${fmt(net)}</div><div class="card-sub">${net>=0?'surplus':'deficit'}</div></div>
+      <div class="card"><div class="card-label">Transfers</div><div class="card-val" style="color:var(--blue)">${fmt(Math.abs(transfers.reduce((s,t)=>s+t.amount,0)))}</div><div class="card-sub">${transfers.length} transfers</div></div>
+      <div class="card"><div class="card-label">Current Balance</div><div class="card-val pos">${fmtD(BALANCES[account]||0)}</div><div class="card-sub">tap card to update</div></div>
+    </div>
+
+    ${!month && monthKeys.length > 1 ? `
+    <div class="chart-wrap">
+      <div class="chart-title">Monthly Income vs Expenses — ${account}</div>
+      <div style="position:relative;height:220px"><canvas id="ar-monthly-bar"></canvas></div>
+    </div>` : ''}
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div class="chart-wrap">
+        <div class="chart-title">Expense Categories</div>
+        <div style="position:relative;height:200px"><canvas id="ar-cat-pie"></canvas></div>
+      </div>
+      <div class="chart-wrap">
+        <div class="chart-title">Top Categories</div>
+        <div style="overflow-y:auto;max-height:200px">
+          <table style="width:100%;font-size:12px;border-collapse:collapse">
+            ${topCats.map(([cat,amt],i)=>`
+              <tr style="border-bottom:1px solid var(--border2)">
+                <td style="padding:7px 10px;color:var(--text2)">${cat}</td>
+                <td style="padding:7px 10px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--red)">${fmt(amt)}</td>
+                <td style="padding:7px 10px;width:80px">
+                  <div style="height:4px;background:var(--bg4);border-radius:2px">
+                    <div style="height:4px;border-radius:2px;background:${CAT_COLORS_LIST[i]};width:${Math.round(amt/totalExp*100)}%"></div>
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-header">
+        <div class="table-title">${account} — All Transactions ${month?'· '+mn[month.split('-')[1]]+' '+month.split('-')[0]:''}</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3)">${txns.length} records</div>
+      </div>
+      <div class="table-scroll" style="max-height:500px">
+        <table>
+          <thead><tr><th>Date</th><th>Note</th><th>Category</th><th>Type</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>
+            ${txns.map(t=>`<tr>
+              <td class="mono">${t.date}</td>
+              <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.note||'—'}</td>
+              <td style="color:var(--text3);font-size:11px">${t.category}</td>
+              <td style="font-size:11px;color:${t.transfer?'var(--blue)':t.amount>0?'var(--green)':'var(--text3)'}">${t.transfer?'Transfer':t.type}</td>
+              <td class="${t.transfer?'transfer-amt':t.amount>0?'pos':'neg'}">${t.transfer?'⇄ ':''}${t.amount>0?'+':'−'}${fmtD(t.amount)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
+  // Render category pie
+  if(topCats.length){
+    setTimeout(()=>{
+      const pieEl = document.getElementById('ar-cat-pie');
+      if(pieEl) new Chart(pieEl,{
+        type:'doughnut',
+        data:{labels:topCats.map(c=>c[0]),datasets:[{data:topCats.map(c=>c[1]),backgroundColor:CAT_COLORS_LIST,borderWidth:2,borderColor:'#111114'}]},
+        options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}}}
+      });
+
+      // Monthly bar
+      if(!month && monthKeys.length>1){
+        const barEl = document.getElementById('ar-monthly-bar');
+        if(barEl) new Chart(barEl,{
+          type:'bar',
+          data:{
+            labels:monthKeys.map(k=>{const[y,mo]=k.split('-');return mn[mo]+' '+y;}),
+            datasets:[
+              {label:'Income',data:monthKeys.map(k=>txns.filter(t=>t.date.startsWith(k)&&!t.transfer&&t.type==='Income').reduce((s,t)=>s+t.amount,0)),backgroundColor:'rgba(39,174,96,0.7)',borderRadius:4,borderWidth:0},
+              {label:'Expenses',data:monthKeys.map(k=>txns.filter(t=>t.date.startsWith(k)&&!t.transfer&&t.type==='Expenses').reduce((s,t)=>s+Math.abs(t.amount),0)),backgroundColor:'rgba(231,76,60,0.7)',borderRadius:4,borderWidth:0}
+            ]
+          },
+          options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#9896a0',font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#9896a0',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#9896a0',font:{size:9},callback:v=>'₹'+Math.round(v/1000)+'k'}}}}
+        });
+      }
+    },50);
+  }
+}
+
+// ── PDF Download ──
+function downloadAccountReport(){
+  const account = document.getElementById('ar-account').value;
+  const month = document.getElementById('ar-month').value;
+  if(!account){toast('Select an account first'); return;}
+
+  const mn={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
+  let txns = TRANSACTIONS.filter(t=>t.account===account);
+  if(month) txns = txns.filter(t=>t.date.startsWith(month));
+  txns = txns.sort((a,b)=>b.date.localeCompare(a.date));
+
+  const exp = txns.filter(t=>!t.transfer&&t.type==='Expenses');
+  const inc = txns.filter(t=>!t.transfer&&t.type==='Income');
+  const totalExp = exp.reduce((s,t)=>s+Math.abs(t.amount),0);
+  const totalInc = inc.reduce((s,t)=>s+t.amount,0);
+  const net = totalInc - totalExp;
+  const catMap={};
+  exp.forEach(t=>{catMap[t.category]=(catMap[t.category]||0)+Math.abs(t.amount);});
+  const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+  const periodLabel = month?(()=>{const[y,mo]=month.split('-');return mn[mo]+' '+y;})():'All Time';
+
+  const rows = txns.map(t=>`
+    <tr style="border-bottom:1px solid #eee">
+      <td style="padding:6px 8px;font-size:11px;font-family:monospace">${t.date}</td>
+      <td style="padding:6px 8px;font-size:11px;max-width:200px;overflow:hidden">${t.note||'—'}</td>
+      <td style="padding:6px 8px;font-size:11px;color:#666">${t.category}</td>
+      <td style="padding:6px 8px;font-size:11px;color:${t.transfer?'#3498db':t.amount>0?'#27ae60':'#e74c3c'};text-align:right;font-family:monospace;font-weight:600">
+        ${t.transfer?'⇄ ':''}${t.amount>0?'+':'−'}₹${Math.abs(t.amount).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2})}
+      </td>
+    </tr>`).join('');
+
+  const catRows = topCats.map(([c,a])=>`
+    <tr style="border-bottom:1px solid #eee">
+      <td style="padding:5px 8px;font-size:11px">${c}</td>
+      <td style="padding:5px 8px;font-size:11px;text-align:right;color:#e74c3c;font-family:monospace">₹${a.toLocaleString('en-IN',{minimumFractionDigits:0})}</td>
+      <td style="padding:5px 8px;font-size:11px;text-align:right;color:#666">${Math.round(a/totalExp*100)}%</td>
+    </tr>`).join('');
+
+  const reportHTML = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>${account} — ${periodLabel}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',sans-serif;color:#1a1714;background:white;padding:32px}
+    .cover{background:#1a1714;color:white;padding:32px;border-radius:8px;margin-bottom:24px}
+    .cover h1{font-size:28px;font-weight:300;letter-spacing:-0.02em;margin-bottom:4px}
+    .cover .sub{font-size:12px;opacity:0.45;font-family:monospace;letter-spacing:0.06em;text-transform:uppercase}
+    .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:24px}
+    .metric{border:1px solid #e8e4da;border-radius:8px;padding:14px 16px}
+    .metric .lbl{font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8a8580;font-family:monospace;margin-bottom:6px}
+    .metric .val{font-size:20px;font-weight:300;font-family:monospace;letter-spacing:-0.02em}
+    .metric .val.pos{color:#27ae60}.metric .val.neg{color:#e74c3c}.metric .val.blue{color:#3498db}
+    h2{font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#8a8580;font-family:monospace;margin:20px 0 10px;padding-bottom:6px;border-bottom:1px solid #e8e4da}
+    table{width:100%;border-collapse:collapse}
+    thead th{font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#8a8580;font-family:monospace;padding:8px;background:#f8f6f0;text-align:left}
+    @media print{body{padding:16px}.cover{break-after:avoid}}
+    .footer{margin-top:32px;padding-top:16px;border-top:1px solid #e8e4da;display:flex;justify-content:space-between;font-size:10px;color:#8a8580;font-family:monospace}
+  </style></head><body>
+  <div class="cover">
+    <div class="sub">fintrack · account statement</div>
+    <h1>${account}</h1>
+    <div style="margin-top:16px;display:flex;gap:32px;font-family:monospace;font-size:12px">
+      <div><div style="opacity:0.4;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">Period</div>${periodLabel}</div>
+      <div><div style="opacity:0.4;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">Transactions</div>${txns.length}</div>
+      <div><div style="opacity:0.4;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">Balance</div>₹${(BALANCES[account]||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</div>
+      <div><div style="opacity:0.4;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:2px">Generated</div>${new Date().toLocaleDateString('en-IN')}</div>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric"><div class="lbl">Total Income</div><div class="val pos">₹${totalInc.toLocaleString('en-IN',{minimumFractionDigits:0})}</div></div>
+    <div class="metric"><div class="lbl">Total Expenses</div><div class="val neg">₹${totalExp.toLocaleString('en-IN',{minimumFractionDigits:0})}</div></div>
+    <div class="metric"><div class="lbl">Net Balance</div><div class="val ${net>=0?'pos':'neg'}">${net>=0?'+':'−'}₹${Math.abs(net).toLocaleString('en-IN',{minimumFractionDigits:0})}</div></div>
+    <div class="metric"><div class="lbl">Current Balance</div><div class="val blue">₹${(BALANCES[account]||0).toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+  </div>
+  <h2>Expense Breakdown by Category</h2>
+  <table><thead><tr><th>Category</th><th style="text-align:right">Amount</th><th style="text-align:right">% of Total</th></tr></thead>
+  <tbody>${catRows}</tbody></table>
+  <h2>Transaction History</h2>
+  <table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <div class="footer"><span>fintrack — personal finance tracker</span><span>${account} · ${periodLabel}</span></div>
+  </body></html>`;
+
+  const blob = new Blob([reportHTML],{type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${account.replace(/\s+/g,'-')}-${periodLabel.replace(/\s+/g,'-')}-report.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast(`✓ Report downloaded — open in browser and Print → Save as PDF`);
+}
+
 
 async function boot(){
   // Show loading state
