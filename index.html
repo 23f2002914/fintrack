@@ -216,6 +216,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
     <button class="nav-item active" onclick="showPage('dashboard')"><span class="icon">◈</span> Dashboard</button>
     <button class="nav-item" onclick="showPage('progress')"><span class="icon">▲</span> Progress</button>
     <button class="nav-item" onclick="showPage('account-report')"><span class="icon">◎</span> Account Report</button>
+    <button class="nav-item" onclick="downloadFullReport()"><span class="icon">⬇</span> Full Report PDF</button>
   </div>
 
   <div class="nav-section">
@@ -1275,6 +1276,435 @@ function downloadAccountReport(){
   a.click();
   URL.revokeObjectURL(url);
   toast(`✓ Report downloaded — open in browser and Print → Save as PDF`);
+}
+
+
+// ═══════════════════════════════════════════════
+// FULL COMBINED REPORT — matches PDF format
+// ═══════════════════════════════════════════════
+function downloadFullReport(){
+  const mn={'01':'Jan','02':'Feb','03':'Mar','04':'Apr','05':'May','06':'Jun','07':'Jul','08':'Aug','09':'Sep','10':'Oct','11':'Nov','12':'Dec'};
+
+  // pick month — ask user
+  const monthKeys=[...new Set(TRANSACTIONS.map(t=>t.date.slice(0,7)))].sort();
+  const monthOptions = monthKeys.map(k=>{const[y,m]=k.split('-');return`${mn[m]} ${y}`;}).join('\n');
+  const chosen = prompt('Which month? (leave blank for all time)\n\nAvailable:\n'+monthOptions);
+  let filterMonth = '';
+  if(chosen && chosen.trim()){
+    // match back to YYYY-MM
+    const match = monthKeys.find(k=>{const[y,m]=k.split('-');return (mn[m]+' '+y).toLowerCase()===chosen.trim().toLowerCase();});
+    if(!match){toast('Month not found — generating all-time report'); }
+    else filterMonth = match;
+  }
+
+  let txAll = TRANSACTIONS;
+  if(filterMonth) txAll = txAll.filter(t=>t.date.startsWith(filterMonth));
+
+  const nonTr = txAll.filter(t=>!t.transfer);
+  const exp = nonTr.filter(t=>t.type==='Expenses');
+  const inc = nonTr.filter(t=>t.type==='Income');
+  const transfers = txAll.filter(t=>t.transfer);
+
+  const totalExp = exp.reduce((s,t)=>s+Math.abs(t.amount),0);
+  const totalInc = inc.reduce((s,t)=>s+t.amount,0);
+  const net = totalInc - totalExp;
+  const txCount = nonTr.length;
+
+  const periodLabel = filterMonth?(()=>{const[y,m]=filterMonth.split('-');return mn[m]+' '+y;})():'All Time';
+  const dateRange = txAll.length>0 ? txAll.map(t=>t.date).sort()[0]+' – '+txAll.map(t=>t.date).sort().reverse()[0] : '';
+
+  // avg per day
+  const uniqueDays = [...new Set(exp.map(t=>t.date))].length;
+  const avgDay = uniqueDays>0?totalExp/uniqueDays:0;
+
+  // category breakdown
+  const catMap={};
+  exp.forEach(t=>{catMap[t.category]=(catMap[t.category]||0)+Math.abs(t.amount);});
+  const topCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+
+  // income sources
+  const incMap={};
+  inc.forEach(t=>{
+    const k = t.category.includes('Rental')||t.category.includes('Income')?'Own income':
+              t.category.includes('Refund')||t.category.includes('Cashback')?'Refunds':
+              t.category.includes('Financial')||t.category.includes('Loan')?'Family/support':'Other';
+    incMap[k]=(incMap[k]||0)+t.amount;
+  });
+  const incSources=Object.entries(incMap).sort((a,b)=>b[1]-a[1]);
+
+  // accounts
+  const accounts=[...new Set(txAll.map(t=>t.account))].sort();
+
+  // per-account data
+  const acctData = accounts.map(acc=>{
+    const aTx = txAll.filter(t=>t.account===acc);
+    const aExp = aTx.filter(t=>!t.transfer&&t.type==='Expenses');
+    const aInc = aTx.filter(t=>!t.transfer&&t.type==='Income');
+    const aTr = aTx.filter(t=>t.transfer&&t.amount<0);
+    const aTrIn = aTx.filter(t=>t.transfer&&t.amount>0);
+    const totalE=aExp.reduce((s,t)=>s+Math.abs(t.amount),0);
+    const totalI=aInc.reduce((s,t)=>s+t.amount,0);
+    const totalTrOut=Math.abs(aTr.reduce((s,t)=>s+t.amount,0));
+    const totalTrIn=aTrIn.reduce((s,t)=>s+t.amount,0);
+    const uniqueD=[...new Set(aExp.map(t=>t.date))].length||1;
+    const maxE=aExp.length>0?Math.max(...aExp.map(t=>Math.abs(t.amount))):0;
+    const maxI=aInc.length>0?Math.max(...aInc.map(t=>t.amount)):0;
+    const aCatMap={};
+    aExp.forEach(t=>{aCatMap[t.category]=(aCatMap[t.category]||0)+Math.abs(t.amount);});
+    const aCats=Object.entries(aCatMap).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    return {acc,aTx,aExp,aInc,totalE,totalI,totalTrOut,totalTrIn,uniqueD,maxE,maxI,aCats,nonTrTx:aTx.filter(t=>!t.transfer).sort((a,b)=>b.date.localeCompare(a.date))};
+  });
+
+  // transfers between accounts
+  const trEvents=[];
+  const trOut = transfers.filter(t=>t.amount<0);
+  trOut.forEach(t=>{
+    const match = transfers.find(t2=>t2.transfer&&t2.amount>0&&t2.date===t.date&&Math.abs(t2.amount)===Math.abs(t.amount)&&t2.account!==t.account);
+    if(match) trEvents.push({date:t.date,from:t.account,to:match.account,note:t.note,amount:Math.abs(t.amount)});
+  });
+
+  const fmtN = v=>'₹'+Math.abs(v).toLocaleString('en-IN',{minimumFractionDigits:0,maximumFractionDigits:0});
+  const fmtD2 = v=>'₹'+Math.abs(v).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  // PIE CHART as SVG (no canvas needed)
+  function svgPie(data, colors, size=120){
+    const total=data.reduce((s,d)=>s+d,0);
+    if(!total) return '<circle cx="60" cy="60" r="50" fill="#222"/>';
+    let angle=-Math.PI/2;
+    let paths='';
+    data.forEach((v,i)=>{
+      const sweep=v/total*2*Math.PI;
+      const x1=60+50*Math.cos(angle),y1=60+50*Math.sin(angle);
+      const x2=60+50*Math.cos(angle+sweep),y2=60+50*Math.sin(angle+sweep);
+      const large=sweep>Math.PI?1:0;
+      // donut inner
+      const ix1=60+28*Math.cos(angle),iy1=60+28*Math.sin(angle);
+      const ix2=60+28*Math.cos(angle+sweep),iy2=60+28*Math.sin(angle+sweep);
+      paths+=`<path d="M ${x1} ${y1} A 50 50 0 ${large} 1 ${x2} ${y2} L ${ix2} ${iy2} A 28 28 0 ${large} 0 ${ix1} ${iy1} Z" fill="${colors[i%colors.length]}"/>`;
+      angle+=sweep;
+    });
+    return `<svg viewBox="0 0 120 120" width="${size}" height="${size}">${paths}</svg>`;
+  }
+
+  const PIE_COLORS=['#2b5278','#c84b2f','#b5872a','#2d6a4f','#7c5c8a','#5c7a3e','#3e6e7a','#7a3e5a','#3e7a5e','#6a6a6a'];
+  const INC_COLORS=['#2d6a4f','#2b5278','#b5872a','#7c5c8a'];
+
+  // account role labels
+  const roleMap={'HDFC':'PRIMARY ACCOUNT','Kotak 811':'DIGITAL ACCOUNT','Slice':'CREDIT/UPI ACCOUNT'};
+
+  // build account statement rows per account
+  const acctStmts = acctData.map(({acc,totalE,totalI,totalTrOut,totalTrIn,uniqueD,maxE,maxI,aCats,nonTrTx})=>`
+    <div class="section-break"></div>
+    <div class="acct-header acct-${acc.toLowerCase().replace(/\s+/g,'-').replace('811','kotak')}">
+      <div>
+        <div class="acct-name-big">${acc}</div>
+        <div class="acct-sub">${roleMap[acc]||'ACCOUNT'} · ${nonTrTx.length} TRANSACTIONS</div>
+      </div>
+      <div class="acct-badges">
+        <span class="badge-in">IN ${fmtN(totalI)}</span>
+        <span class="badge-out">OUT ${fmtN(totalE)}</span>
+        <span class="badge-net">NET ${totalI-totalE>=0?'+':''}${fmtN(totalI-totalE)}</span>
+        ${totalTrIn>0?`<span class="badge-tr">+ ${fmtN(totalTrIn)} transferred in</span>`:''}
+      </div>
+    </div>
+    <div class="acct-stats">
+      <div class="acct-stat"><div class="stat-label">Avg/Day (exp)</div><div class="stat-val neg">${fmtN(totalE/(uniqueD||1))}</div></div>
+      <div class="acct-stat"><div class="stat-label">Largest Expense</div><div class="stat-val neg">${fmtN(maxE)}</div></div>
+      <div class="acct-stat"><div class="stat-label">Largest Income</div><div class="stat-val pos">${fmtN(maxI)}</div></div>
+      ${totalTrOut>0?`<div class="acct-stat"><div class="stat-label">Transfers Out</div><div class="stat-val blue">${fmtN(totalTrOut)}</div></div>`:''}
+      <div class="acct-stat"><div class="stat-label">Transactions</div><div class="stat-val">${nonTrTx.length}</div></div>
+    </div>
+    <table class="tx-table">
+      <thead><tr><th>DATE</th><th>NOTE</th><th>CATEGORY</th><th style="text-align:right">AMOUNT</th></tr></thead>
+      <tbody>
+        ${nonTrTx.map(t=>`<tr>
+          <td class="date-cell">${t.date.slice(5)}</td>
+          <td class="note-cell">${t.note||'—'}</td>
+          <td class="cat-cell">${t.category}</td>
+          <td class="${t.amount>0?'pos-cell':'neg-cell'}">${t.amount>0?'+':'−'}${fmtD2(t.amount)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  `).join('');
+
+  // transfers section
+  const trSection = trEvents.length>0?`
+    <div class="section-break"></div>
+    <h2 class="section-num">02b</h2><h2 class="section-title">Internal Transfers</h2>
+    <div class="transfer-cards">
+      ${[...new Set(trEvents.map(t=>t.from+'>'+t.to))].map(key=>{
+        const [from,to]=key.split('>');
+        const sum=trEvents.filter(t=>t.from===from&&t.to===to).reduce((s,t)=>s+t.amount,0);
+        const count=trEvents.filter(t=>t.from===from&&t.to===to).length;
+        return `<div class="tr-card"><div class="tr-route">${from} → ${to}</div><div class="tr-amt">${fmtN(sum)}</div><div class="tr-sub">${count} transfer${count>1?'s':''}</div></div>`;
+      }).join('')}
+      <div class="tr-card highlight"><div class="tr-route">TOTAL MOVED</div><div class="tr-amt">${fmtN(trEvents.reduce((s,t)=>s+t.amount,0))}</div><div class="tr-sub">across ${trEvents.length} events</div></div>
+    </div>
+    <table class="tx-table" style="margin-top:12px">
+      <thead><tr><th>DATE</th><th>FROM</th><th>TO</th><th>NOTE</th><th style="text-align:right">AMOUNT</th></tr></thead>
+      <tbody>${trEvents.map(t=>`<tr><td class="date-cell">${t.date.slice(5)}</td><td>${t.from}</td><td>${t.to}</td><td class="note-cell">${t.note||'—'}</td><td class="pos-cell">${fmtN(t.amount)}</td></tr>`).join('')}</tbody>
+    </table>
+  `:'';
+
+  // findings — auto-generate based on data
+  const findings=[];
+  if(net<0) findings.push({type:'warn',title:'Deficit period',body:`Expenses exceeded income by ${fmtN(Math.abs(net))}. Review large outflows and ensure recurring income covers obligations.`});
+  else findings.push({type:'good',title:'Surplus period',body:`Income exceeded expenses by ${fmtN(net)}. Good financial health this period.`});
+  const topCat = topCats[0];
+  if(topCat) findings.push({type:'info',title:`Top expense: ${topCat[0]}`,body:`${fmtN(topCat[1])} spent — ${Math.round(topCat[1]/totalExp*100)}% of total expenses.`});
+  const foodSpend = catMap['Food & Drinks']||0;
+  if(foodSpend>0){const foodTx=exp.filter(t=>t.category==='Food & Drinks').length; findings.push({type:'good',title:'Food spending',body:`${fmtN(foodSpend)} across ${foodTx} transactions — ${fmtN(foodSpend/foodTx)} avg per spend.`});}
+  const transpTotal=(catMap['Public transport']||0)+(catMap['Taxi']||0)+(catMap['Transportation']||0)+(catMap['Fuel']||0);
+  if(transpTotal>0) findings.push({type:'good',title:'Transport',body:`${fmtN(transpTotal)} total across all transport categories.`});
+  const finExp=catMap['Financial expenses']||0;
+  if(finExp>0) findings.push({type:'warn',title:'Financial expenses',body:`${fmtN(finExp)} in financial expenses. Ensure these are documented and intentional.`});
+
+  const findingsHtml = findings.map(f=>`
+    <div class="finding finding-${f.type}">
+      <div class="finding-title">${f.type==='warn'?'⚡':f.type==='good'?'✓':'💡'} ${f.title}</div>
+      <div class="finding-body">${f.body}</div>
+    </div>`).join('');
+
+  // balance table
+  const balRows = accounts.map(a=>`
+    <div class="bal-box bal-${a.toLowerCase().replace(/\s+/g,'-').replace('811','kotak')}">
+      <div class="bal-box-name">${a.toUpperCase()}</div>
+      <div class="bal-box-amt">${fmtD2(BALANCES[a]||0)}</div>
+      <div class="bal-box-role">${roleMap[a]||'account'}</div>
+    </div>`).join('');
+  const totalBal=Object.values(BALANCES).reduce((s,v)=>s+v,0);
+
+  const report = `<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8">
+<title>Financial Report — ${periodLabel}</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:white;color:#1a1714;font-size:13px;line-height:1.6}
+@media print{
+  .no-print{display:none}
+  .page-break{page-break-before:always}
+  body{font-size:11px}
+}
+/* COVER */
+.cover{background:#1a1714;color:#faf8f4;padding:48px 56px 40px;position:relative;overflow:hidden}
+.cover::after{content:'';position:absolute;right:-60px;top:-60px;width:320px;height:320px;border-radius:50%;border:40px solid rgba(255,255,255,0.04)}
+.cover-label{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:rgba(250,248,244,0.4);margin-bottom:16px}
+.cover h1{font-family:'DM Serif Display',serif;font-size:48px;font-weight:400;letter-spacing:-0.01em;line-height:1.1;margin-bottom:8px}
+.cover h1 em{font-style:italic;color:#e8925a}
+.cover-meta{display:flex;gap:28px;margin-top:28px;padding-top:24px;border-top:1px solid rgba(255,255,255,0.1);flex-wrap:wrap}
+.cover-meta-item label{display:block;font-size:9px;letter-spacing:0.1em;text-transform:uppercase;color:rgba(250,248,244,0.35);margin-bottom:3px;font-family:'DM Mono',monospace}
+.cover-meta-item span{font-size:15px;font-weight:500}
+.cover-meta-item span.neg{color:#f09080}
+.cover-meta-item span.pos{color:#80d0a0}
+/* CONTENT */
+.content{max-width:960px;margin:0 auto;padding:48px 48px}
+@media(max-width:700px){.content{padding:24px 16px}}
+/* SECTION HEADERS */
+.section-header{display:flex;align-items:baseline;gap:16px;margin:48px 0 20px;padding-bottom:10px;border-bottom:1.5px solid #1a1714}
+.section-num{font-family:'DM Mono',monospace;font-size:10px;color:#8a8580;letter-spacing:0.08em}
+.section-title{font-family:'DM Serif Display',serif;font-size:22px;font-weight:400}
+.section-break{margin-top:32px}
+/* METRIC CARDS */
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:24px}
+.metric{background:#f2efe8;border:1px solid rgba(26,23,20,0.1);border-radius:8px;padding:14px 16px}
+.metric-label{font-family:'DM Mono',monospace;font-size:9px;color:#8a8580;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px}
+.metric-val{font-family:'DM Serif Display',serif;font-size:24px;line-height:1;margin-bottom:3px}
+.metric-val.neg{color:#c84b2f}.metric-val.pos{color:#2d6a4f}.metric-val.gold{color:#b5872a}
+.metric-sub{font-size:10px;color:#8a8580}
+/* BALANCE BOXES */
+.balance-section{margin-bottom:28px}
+.bal-title{font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8a8580;margin-bottom:10px}
+.bal-boxes{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+.bal-box{border-radius:8px;padding:16px 18px;color:white}
+.bal-box-hdfc{background:linear-gradient(135deg,#7b0f0a,#c0392b)}
+.bal-box-kotak{background:linear-gradient(135deg,#006d7a,#00bcd4)}
+.bal-box-slice{background:linear-gradient(135deg,#8b0050,#e91e8c)}
+.bal-box-kotak-811{background:linear-gradient(135deg,#006d7a,#00bcd4)}
+.bal-box-name{font-family:'DM Mono',monospace;font-size:9px;opacity:0.5;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px}
+.bal-box-amt{font-family:'DM Serif Display',serif;font-size:24px;line-height:1;margin-bottom:3px}
+.bal-box-role{font-size:10px;opacity:0.45}
+.bal-total{margin-top:10px;padding:12px 16px;background:#f2efe8;border-radius:6px;display:flex;justify-content:space-between;align-items:center}
+.bal-total-label{font-size:11px;font-family:'DM Mono',monospace;color:#8a8580;text-transform:uppercase;letter-spacing:0.05em}
+.bal-total-val{font-family:'DM Serif Display',serif;font-size:20px;color:#2d6a4f}
+/* PIE CHARTS */
+.charts-row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.chart-box{background:#f2efe8;border:1px solid rgba(26,23,20,0.08);border-radius:8px;padding:18px}
+.chart-box-title{font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.08em;color:#8a8580;margin-bottom:12px}
+.pie-row{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.legend{display:flex;flex-direction:column;gap:4px;font-size:10px;color:#4a4641;flex:1;min-width:120px}
+.legend-item{display:flex;align-items:center;gap:6px}
+.legend-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+/* CATEGORY BAR */
+.cat-bar-wrap{background:#f2efe8;border:1px solid rgba(26,23,20,0.08);border-radius:8px;padding:18px;margin-bottom:20px}
+.cat-row{display:grid;grid-template-columns:140px 1fr 70px;gap:8px;align-items:center;margin-bottom:8px;font-size:11px}
+.cat-name{color:#4a4641;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-bar-bg{height:6px;background:#e8e4da;border-radius:3px;overflow:hidden}
+.cat-bar-fill{height:6px;border-radius:3px}
+.cat-amt{text-align:right;font-family:'DM Mono',monospace;font-size:10px;color:#c84b2f}
+/* ACCOUNT SECTIONS */
+.acct-header{padding:16px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;border-radius:8px 8px 0 0;margin-top:20px;color:white}
+.acct-header-hdfc{background:#1a1714}
+.acct-header-digital-account,.acct-header-kotak{background:#2b5278}
+.acct-header-kotak-811{background:#2b5278}
+.acct-header-credit-upi-account,.acct-header-slice{background:#2d6a4f}
+.acct-name-big{font-family:'DM Serif Display',serif;font-size:18px;font-weight:400}
+.acct-sub{font-size:10px;opacity:0.45;font-family:'DM Mono',monospace;margin-top:2px;letter-spacing:0.04em}
+.acct-badges{display:flex;gap:8px;flex-wrap:wrap}
+.badge-in{background:rgba(255,255,255,0.12);color:#a0e8b8;padding:3px 10px;border-radius:12px;font-size:10px;font-family:'DM Mono',monospace}
+.badge-out{background:rgba(255,255,255,0.12);color:#f09090;padding:3px 10px;border-radius:12px;font-size:10px;font-family:'DM Mono',monospace}
+.badge-net{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.7);padding:3px 10px;border-radius:12px;font-size:10px;font-family:'DM Mono',monospace}
+.badge-tr{background:rgba(255,255,255,0.1);color:rgba(255,255,255,0.6);padding:3px 10px;border-radius:12px;font-size:10px;font-family:'DM Mono',monospace}
+.acct-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));border:1px solid rgba(26,23,20,0.1);border-top:none}
+.acct-stat{padding:12px 16px;border-right:1px solid rgba(26,23,20,0.08)}
+.acct-stat:last-child{border-right:none}
+.stat-label{font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#8a8580;margin-bottom:3px}
+.stat-val{font-size:15px;font-weight:500}.stat-val.neg{color:#c84b2f}.stat-val.pos{color:#2d6a4f}.stat-val.blue{color:#2b5278}
+/* TABLES */
+.tx-table{width:100%;border-collapse:collapse;margin-top:0;font-size:11px;border:1px solid rgba(26,23,20,0.1);border-top:none;border-radius:0 0 8px 8px;overflow:hidden}
+.tx-table thead th{padding:8px 12px;text-align:left;font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.06em;color:#8a8580;background:#f2efe8;border-bottom:1px solid rgba(26,23,20,0.1)}
+.tx-table tbody tr{border-bottom:1px solid rgba(26,23,20,0.05)}
+.tx-table tbody tr:last-child{border-bottom:none}
+.tx-table td{padding:8px 12px;color:#4a4641;vertical-align:middle}
+.date-cell{font-family:'DM Mono',monospace;font-size:10px;color:#8a8580;white-space:nowrap}
+.note-cell{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cat-cell{color:#8a8580;font-size:10px}
+.pos-cell{color:#2d6a4f;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;text-align:right;white-space:nowrap}
+.neg-cell{color:#c84b2f;font-family:'DM Mono',monospace;font-size:11px;font-weight:500;text-align:right;white-space:nowrap}
+/* TRANSFERS */
+.transfer-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}
+.tr-card{background:#f2efe8;border:1px solid rgba(26,23,20,0.1);border-radius:8px;padding:14px 16px}
+.tr-card.highlight{border-color:#1a1714}
+.tr-route{font-family:'DM Mono',monospace;font-size:10px;color:#8a8580;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.04em}
+.tr-amt{font-family:'DM Serif Display',serif;font-size:22px}
+.tr-sub{font-size:10px;color:#8a8580;margin-top:2px}
+/* FINDINGS */
+.findings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:24px}
+.finding{border:1px solid rgba(26,23,20,0.1);border-radius:8px;padding:14px 16px;background:white}
+.finding-warn{border-left:3px solid #b5872a}
+.finding-good{border-left:3px solid #2d6a4f}
+.finding-info{border-left:3px solid #2b5278}
+.finding-title{font-size:12px;font-weight:500;margin-bottom:4px}
+.finding-body{font-size:11px;color:#4a4641;line-height:1.55}
+/* FOOTER */
+.report-footer{margin-top:48px;padding-top:16px;border-top:1px solid rgba(26,23,20,0.1);display:flex;justify-content:space-between;font-size:10px;font-family:'DM Mono',monospace;color:#8a8580;flex-wrap:wrap;gap:8px}
+.print-btn{position:fixed;bottom:24px;right:24px;background:#1a1714;color:#faf8f4;border:none;padding:10px 20px;border-radius:24px;font-family:'DM Sans',sans-serif;font-size:13px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,0.2)}
+</style>
+</head>
+<body>
+
+<!-- COVER -->
+<div class="cover">
+  <div class="cover-label">Personal Finance Report</div>
+  <h1>${periodLabel.split(' ')[0]} <em>${periodLabel.split(' ').slice(1).join(' ')||''}</em></h1>
+  <div class="cover-meta">
+    <div class="cover-meta-item"><label>Period</label><span>${dateRange||periodLabel}</span></div>
+    <div class="cover-meta-item"><label>Total Expenses</label><span class="neg">${fmtN(totalExp)}</span></div>
+    <div class="cover-meta-item"><label>Total Income</label><span class="pos">${fmtN(totalInc)}</span></div>
+    <div class="cover-meta-item"><label>Net Balance</label><span class="${net>=0?'pos':'neg'}">${net>=0?'+':'−'}${fmtN(Math.abs(net))}</span></div>
+    <div class="cover-meta-item"><label>Accounts</label><span>${accounts.join(' · ')}</span></div>
+    <div class="cover-meta-item"><label>Transactions</label><span>${txCount}</span></div>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- 01 MONTHLY SUMMARY -->
+<div class="section-header">
+  <span class="section-num">01</span>
+  <span class="section-title">Monthly Summary</span>
+</div>
+
+<div class="metrics-grid">
+  <div class="metric"><div class="metric-label">Total Expenses</div><div class="metric-val neg">${fmtN(totalExp)}</div><div class="metric-sub">excl. internal transfers</div></div>
+  <div class="metric"><div class="metric-label">Total Income</div><div class="metric-val pos">${fmtN(totalInc)}</div><div class="metric-sub">excl. internal transfers</div></div>
+  <div class="metric"><div class="metric-label">Net Balance</div><div class="metric-val ${net>=0?'pos':'neg'}">${net>=0?'+':'−'}${fmtN(Math.abs(net))}</div><div class="metric-sub">${net>=0?'surplus':'deficit'}</div></div>
+  <div class="metric"><div class="metric-label">Avg Spend / Day</div><div class="metric-val gold">${fmtN(avgDay)}</div><div class="metric-sub">${uniqueDays} active days</div></div>
+  <div class="metric"><div class="metric-label">Transactions</div><div class="metric-val">${txCount}</div><div class="metric-sub">across ${accounts.length} accounts</div></div>
+  <div class="metric"><div class="metric-label">Refunds Received</div><div class="metric-val pos">${fmtN(inc.filter(t=>t.category.includes('Refund')||t.category.includes('Cashback')).reduce((s,t)=>s+t.amount,0))}</div><div class="metric-sub">cashbacks &amp; reimbursements</div></div>
+</div>
+
+<div class="balance-section">
+  <div class="bal-title">Current Account Balances</div>
+  <div class="bal-boxes">${balRows}</div>
+  <div class="bal-total">
+    <span class="bal-total-label">Total across all accounts</span>
+    <span class="bal-total-val">${fmtD2(totalBal)}</span>
+  </div>
+</div>
+
+<div class="charts-row">
+  <div class="chart-box">
+    <div class="chart-box-title">Expense Breakdown</div>
+    <div class="pie-row">
+      ${svgPie(topCats.slice(0,8).map(c=>c[1]),PIE_COLORS,110)}
+      <div class="legend">
+        ${topCats.slice(0,8).map(([c,v],i)=>`<div class="legend-item"><div class="legend-dot" style="background:${PIE_COLORS[i]}"></div><span>${c.length>18?c.slice(0,16)+'…':c} ${Math.round(v/totalExp*100)}%</span></div>`).join('')}
+      </div>
+    </div>
+  </div>
+  <div class="chart-box">
+    <div class="chart-box-title">Income Sources</div>
+    <div class="pie-row">
+      ${svgPie(incSources.map(c=>c[1]),INC_COLORS,110)}
+      <div class="legend">
+        ${incSources.map(([c,v],i)=>`<div class="legend-item"><div class="legend-dot" style="background:${INC_COLORS[i]}"></div><span>${c} ${Math.round(v/totalInc*100)}%</span></div>`).join('')}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 02 ACCOUNT STATEMENTS -->
+<div class="section-header page-break">
+  <span class="section-num">02</span>
+  <span class="section-title">Account Statements</span>
+</div>
+${acctStmts}
+
+<!-- 02b TRANSFERS -->
+${trSection}
+
+<!-- 03 CATEGORY DEEP DIVE -->
+<div class="section-header page-break">
+  <span class="section-num">03</span>
+  <span class="section-title">Category Deep Dive</span>
+</div>
+
+<div class="cat-bar-wrap">
+  <div class="chart-box-title" style="margin-bottom:16px">Expenses by Category — All Accounts</div>
+  ${topCats.map(([c,v])=>`
+    <div class="cat-row">
+      <div class="cat-name">${c}</div>
+      <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${Math.round(v/topCats[0][1]*100)}%;background:#2b5278"></div></div>
+      <div class="cat-amt">${fmtN(v)}</div>
+    </div>`).join('')}
+</div>
+
+<!-- 04 FINDINGS -->
+<div class="section-header">
+  <span class="section-num">04</span>
+  <span class="section-title">Findings &amp; Recommendations</span>
+</div>
+<div class="findings-grid">${findingsHtml}</div>
+
+<div class="report-footer">
+  <span>Generated from ${txCount} transactions · ${dateRange||periodLabel}</span>
+  <span>Currency: INR · All transfers excluded from P&amp;L</span>
+</div>
+
+</div><!-- /content -->
+
+<button class="print-btn no-print" onclick="window.print()">⎙ Print / Save PDF</button>
+</body></html>`;
+
+  const blob=new Blob([report],{type:'text/html'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=`Financial-Report-${periodLabel.replace(/\s+/g,'-')}.html`;
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('✓ Report downloaded — open and Print → Save as PDF');
 }
 
 
