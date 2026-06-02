@@ -944,50 +944,6 @@ function readCSV(file){
 // ═══════════════════════════════════════════════
 // INIT — load all data from Supabase on boot
 // ═══════════════════════════════════════════════
-async function boot(){
-  // Show loading state
-  document.getElementById('dash-cards').innerHTML='<div style="color:var(--text3);font-family:'JetBrains Mono',monospace;font-size:12px;padding:20px 0">Loading from database...</div>';
-
-  try {
-    // Load transactions
-    const {data:txData}=await sb.from('transactions').select('*').order('date',{ascending:false});
-    if(txData&&txData.length>0){
-      TRANSACTIONS=[...txData.map(t=>({
-        date:t.date,account:t.account,category:t.category||'',
-        note:t.note||'',amount:Number(t.amount),type:t.type||'',transfer:t.transfer||false
-      })),...TRANSACTIONS.filter(()=>false)]; // replace entirely with DB data
-    }
-
-    // Load bills
-    const {data:billData}=await sb.from('bills').select('*').order('due_date');
-    if(billData) BILLS=billData.map(b=>({id:b.id,name:b.name,amount:Number(b.amount),date:b.due_date,paid:b.paid}));
-
-    // Load debts
-    const {data:debtData}=await sb.from('debts').select('*').order('created_at');
-    if(debtData){
-      DEBTS.owe=debtData.filter(d=>d.direction==='owe').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
-      DEBTS.owed=debtData.filter(d=>d.direction==='owed').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
-    }
-
-    // Load balances
-    const {data:balData}=await sb.from('balances').select('*');
-    if(balData) balData.forEach(b=>{BALANCES[b.account]=Number(b.balance);});
-
-    // Update sidebar balances
-    updateSidebarBalances();
-
-    // Update import log
-    const txCount=TRANSACTIONS.length;
-    document.getElementById('import-log').innerHTML=`<div style="color:var(--green)">✓ Loaded ${txCount} transactions from database</div>`;
-
-  } catch(err){
-    console.error('Boot error:',err);
-    document.getElementById('import-log').innerHTML=`<div style="color:var(--red)">⚠ Could not connect to database. Check your Supabase keys in index.html</div>`;
-  }
-
-  initDashboard();
-}
-
 // Generate a stable colour for any account name
 function acctColor(name){
   const map={'HDFC':'#c0392b','Kotak 811':'#00bcd4','Slice':'#e91e8c'};
@@ -1040,8 +996,52 @@ function renderAccountCards(){
     </div>`).join('');
 }
 
+async function boot(){
+  // Show loading state
+  document.getElementById('dash-cards').innerHTML='<div style="color:var(--text3);font-size:12px;padding:20px 0">Loading from database...</div>';
+
+  try {
+    // Load transactions
+    const {data:txData}=await sb.from('transactions').select('*').order('date',{ascending:false});
+    if(txData&&txData.length>0){
+      TRANSACTIONS=[...txData.map(t=>({
+        date:t.date,account:t.account,category:t.category||'',
+        note:t.note||'',amount:Number(t.amount),type:t.type||'',transfer:t.transfer||false
+      })),...TRANSACTIONS.filter(()=>false)]; // replace entirely with DB data
+    }
+
+    // Load bills
+    const {data:billData}=await sb.from('bills').select('*').order('due_date');
+    if(billData) BILLS=billData.map(b=>({id:b.id,name:b.name,amount:Number(b.amount),date:b.due_date,paid:b.paid}));
+
+    // Load debts
+    const {data:debtData}=await sb.from('debts').select('*').order('created_at');
+    if(debtData){
+      DEBTS.owe=debtData.filter(d=>d.direction==='owe').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
+      DEBTS.owed=debtData.filter(d=>d.direction==='owed').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
+    }
+
+    // Load balances
+    const {data:balData}=await sb.from('balances').select('*');
+    if(balData) balData.forEach(b=>{BALANCES[b.account]=Number(b.balance);});
+
+    // Update sidebar balances
+    updateSidebarBalances();
+
+    // Update import log
+    const txCount=TRANSACTIONS.length;
+    document.getElementById('import-log').innerHTML=`<div style="color:var(--green)">✓ Loaded ${txCount} transactions from database</div>`;
+
+  } catch(err){
+    console.error('Boot error:',err);
+    document.getElementById('import-log').innerHTML=`<div style="color:var(--red)">⚠ Could not connect to database. Check your Supabase keys in index.html</div>`;
+  }
+
+  initDashboard();
+}
+
 async function promptUpdateBalance(account){
-  const val=parseFloat(prompt(\`Current balance for \${account} (₹):\`));
+  const val=parseFloat(prompt('Current balance for '+account+' (₹):'));
   if(isNaN(val)) return;
   await updateBalance(account,val);
   renderAccountCards();
