@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>fintrack — Personal Finance Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0b;--bg2:#111114;--bg3:#18181d;--bg4:#222228;
+  --border:#2a2a32;--border2:#33333d;
+  --text:#e8e6e0;--text2:#9896a0;--text3:#55535d;
+  --hdfc:#c0392b;--kotak:#00bcd4;--slice:#e91e8c;
+  --green:#27ae60;--red:#e74c3c;--gold:#f39c12;--blue:#3498db;--purple:#9b59b6;
+  --accent:#7c6af5;
+}
+body{font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+/* SCROLLBAR */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+/* ── LAYOUT ── */
+.app{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);padding:24px 0;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
+.main{overflow-y:auto;height:100vh}
+
+/* ── SIDEBAR ── */
+.logo{padding:0 20px 24px;border-bottom:1px solid var(--border);margin-bottom:16px}
+.logo-text{font-size:17px;font-weight:600;letter-spacing:-0.01em}
+.logo-text span{color:var(--accent)}
+.logo-sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text3);margin-top:2px;letter-spacing:0.05em}
+.nav-section{padding:0 12px;margin-bottom:8px}
+.nav-label{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text3);letter-spacing:0.1em;text-transform:uppercase;padding:0 8px;margin-bottom:6px}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:400;color:var(--text2);transition:all 0.15s;border:none;background:none;width:100%;text-align:left}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--accent);color:white}
+.nav-item .icon{font-size:15px;width:18px;text-align:center}
+.sidebar-balances{margin-top:auto;padding:16px 16px 0;border-top:1px solid var(--border)}
+.bal-label{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px}
+.bal-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12px}
+.bal-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.bal-name{color:var(--text2);flex:1;margin-left:8px}
+.bal-val{font-family:'JetBrains Mono',monospace;font-weight:500;font-size:11px}
+
+/* ── PAGE ── */
+.page{display:none;padding:28px 32px;min-height:100vh}
+.page.active{display:block}
+.page-header{margin-bottom:28px}
+.page-title{font-size:24px;font-weight:500;letter-spacing:-0.02em}
+.page-title span{color:var(--accent)}
+.page-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);margin-top:4px}
+
+/* ── CARDS ── */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:24px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:18px 20px}
+.card-label{font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px;font-weight:400}
+.card-val{font-size:22px;font-weight:300;line-height:1;letter-spacing:-0.03em;font-family:'JetBrains Mono',monospace}
+.card-val.neg{color:var(--red)}
+.card-val.pos{color:var(--green)}
+.card-val.gold{color:var(--gold)}
+.card-sub{font-size:10px;color:var(--text3);margin-top:6px;font-weight:300}
+.card.accent-border{border-color:var(--accent)}
+
+/* ── ACCOUNT CARDS ── */
+.acct-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:24px}
+.acct-card{border-radius:10px;padding:20px 22px;position:relative;overflow:hidden}
+.acct-card::after{content:'';position:absolute;right:-20px;top:-20px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,0.05)}
+.acct-card.hdfc{background:linear-gradient(135deg,#7b0f0a,#c0392b)}
+.acct-card.kotak{background:linear-gradient(135deg,#006d7a,#00bcd4)}
+.acct-card.slice{background:linear-gradient(135deg,#8b0050,#e91e8c)}
+.acct-name{font-size:9px;font-family:'JetBrains Mono',monospace;letter-spacing:0.1em;opacity:0.45;margin-bottom:10px;text-transform:uppercase;font-weight:400}
+.acct-bal{font-size:26px;font-weight:300;letter-spacing:-0.03em;font-family:'JetBrains Mono',monospace}
+.acct-role{font-size:10px;opacity:0.45;margin-top:5px;font-weight:300;letter-spacing:0.02em}
+
+/* ── CHARTS ── */
+.chart-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px}
+.chart-title{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:16px}
+.charts-2col{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.h180{position:relative;height:180px}
+.h240{position:relative;height:240px}
+.h280{position:relative;height:280px}
+
+/* ── TABLES ── */
+.table-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:20px}
+.table-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.table-title{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em}
+.table-scroll{overflow-x:auto;max-height:400px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{padding:10px 14px;text-align:left;font-family:'JetBrains Mono',monospace;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.07em;background:var(--bg3);position:sticky;top:0;white-space:nowrap}
+tbody tr{border-bottom:1px solid var(--border2);transition:background 0.1s}
+tbody tr:hover{background:var(--bg3)}
+tbody tr:last-child{border-bottom:none}
+td{padding:9px 14px;color:var(--text2);vertical-align:middle}
+td.mono{font-family:'JetBrains Mono',monospace;font-size:11px}
+td.pos{color:var(--green);font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;text-align:right}
+td.neg{color:var(--red);font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;text-align:right}
+td.transfer-amt{color:var(--blue);font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;text-align:right}
+.pill{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-family:'JetBrains Mono',monospace;background:var(--bg4);color:var(--text3)}
+.pill.hdfc{background:rgba(192,57,43,0.15);color:#e74c3c}
+.pill.kotak{background:rgba(0,188,212,0.12);color:#00bcd4}
+.pill.slice{background:rgba(233,30,140,0.12);color:#e91e8c}
+
+/* ── BILLS TRACKER ── */
+.bills-list{display:flex;flex-direction:column;gap:8px;margin-bottom:20px}
+.bill-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+.bill-item.urgent{border-color:var(--red)}
+.bill-item.soon{border-color:var(--gold)}
+.bill-item.ok{border-color:var(--border)}
+.bill-left{display:flex;align-items:center;gap:12px}
+.bill-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.bill-name{font-size:13px;font-weight:600}
+.bill-date{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text3)}
+.bill-amt{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:300;color:var(--red)}
+.bill-actions{display:flex;gap:6px}
+.btn-sm{padding:5px 12px;border-radius:6px;font-size:11px;font-family:'Space Grotesk',sans-serif;font-weight:600;cursor:pointer;border:none;transition:all 0.15s}
+.btn-ghost{background:var(--bg4);color:var(--text2);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-accent{background:var(--accent);color:white}
+.btn-accent:hover{opacity:0.85}
+.btn-danger{background:rgba(231,76,60,0.15);color:var(--red);border:1px solid rgba(231,76,60,0.2)}
+.btn-success{background:rgba(39,174,96,0.15);color:var(--green);border:1px solid rgba(39,174,96,0.2)}
+
+/* ── DEBT TRACKER ── */
+.debt-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.debt-section-title{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px}
+.debt-item{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:8px}
+.debt-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.debt-person{font-size:13px;font-weight:600}
+.debt-amount{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:400}
+.debt-amount.owe{color:var(--red)}
+.debt-amount.owed{color:var(--green)}
+.debt-meta{font-size:11px;color:var(--text3);display:flex;gap:12px}
+.debt-progress{height:3px;background:var(--bg4);border-radius:2px;margin-top:8px;overflow:hidden}
+.debt-progress-bar{height:100%;border-radius:2px;background:var(--accent);transition:width 0.3s}
+.add-btn{width:100%;background:var(--bg3);border:1px dashed var(--border2);border-radius:10px;padding:12px;font-size:12px;color:var(--text3);cursor:pointer;transition:all 0.15s;font-family:'Space Grotesk',sans-serif}
+.add-btn:hover{background:var(--bg4);color:var(--text2);border-color:var(--border)}
+
+/* ── ACCOUNT SPLIT ── */
+.split-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}
+.split-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px}
+.split-title{font-size:11px;font-weight:500;margin-bottom:14px;display:flex;align-items:center;gap:8px;letter-spacing:0.02em}
+.split-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border2)}
+.split-row:last-child{border-bottom:none}
+.split-name{font-size:12px;color:var(--text2)}
+.split-val{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500}
+.split-bar{height:6px;background:var(--bg4);border-radius:3px;margin-top:4px;overflow:hidden}
+.split-bar-fill{height:100%;border-radius:3px;transition:width 0.4s}
+.recommendation{background:var(--bg3);border:1px solid var(--accent);border-radius:10px;padding:16px;margin-bottom:12px}
+.rec-title{font-size:12px;font-weight:700;color:var(--accent);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.rec-body{font-size:12px;color:var(--text2);line-height:1.6}
+.rec-transfers{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.transfer-arrow{display:flex;align-items:center;gap:8px;font-size:12px;font-family:'JetBrains Mono',monospace;padding:6px 10px;background:var(--bg4);border-radius:6px}
+
+/* ── PROGRESS ── */
+.progress-month{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:16px}
+.month-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;flex-wrap:wrap;gap:8px}
+.month-name{font-size:15px;font-weight:500}
+.month-badges{display:flex;gap:6px;flex-wrap:wrap}
+.badge{padding:3px 10px;border-radius:8px;font-size:10px;font-family:'JetBrains Mono',monospace;font-weight:500}
+.badge.surplus{background:rgba(39,174,96,0.15);color:var(--green)}
+.badge.deficit{background:rgba(231,76,60,0.15);color:var(--red)}
+.month-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.month-stat label{font-size:9px;font-family:'JetBrains Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;display:block;margin-bottom:3px}
+.month-stat span{font-size:16px;font-weight:300;font-family:'JetBrains Mono',monospace}
+
+/* ── IMPORT ── */
+.import-zone{border:2px dashed var(--border2);border-radius:12px;padding:40px;text-align:center;cursor:pointer;transition:all 0.2s;margin-bottom:20px}
+.import-zone:hover,.import-zone.dragover{border-color:var(--accent);background:rgba(124,106,245,0.05)}
+.import-icon{font-size:36px;margin-bottom:12px}
+.import-title{font-size:14px;font-weight:700;margin-bottom:6px}
+.import-sub{font-size:12px;color:var(--text3)}
+#csv-input{display:none}
+
+/* ── PREDICTIVE ── */
+.predict-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:14px}
+.predict-title{font-size:13px;font-weight:700;margin-bottom:4px}
+.predict-val{font-size:22px;font-weight:300;letter-spacing:-0.03em;margin:8px 0 4px;font-family:'JetBrains Mono',monospace}
+.predict-context{font-size:11px;color:var(--text3);line-height:1.5}
+
+/* ── INPUT STYLES ── */
+input,select,textarea{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:8px 12px;font-size:13px;font-family:'Space Grotesk',sans-serif;outline:none;transition:border 0.15s}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+.form-row{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:end}
+.form-label{font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;display:block}
+
+/* ── TOAST ── */
+#toast{position:fixed;bottom:24px;right:24px;background:var(--accent);color:white;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;opacity:0;pointer-events:none;transition:opacity 0.3s;z-index:999}
+#toast.show{opacity:1}
+
+/* ── RESPONSIVE ── */
+@media(max-width:768px){
+  .app{grid-template-columns:1fr}
+  .sidebar{position:fixed;left:-220px;z-index:100;transition:left 0.3s;height:100%}
+  .sidebar.open{left:0}
+  .acct-cards,.split-grid,.debt-grid,.charts-2col{grid-template-columns:1fr}
+  .page{padding:16px}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+<!-- ── SIDEBAR ── -->
+<nav class="sidebar" id="sidebar">
+  <div class="logo">
+    <div class="logo-text">fin<span>track</span></div>
+    <div class="logo-sub">personal finance tracker</div>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Overview</div>
+    <button class="nav-item active" onclick="showPage('dashboard')"><span class="icon">◈</span> Dashboard</button>
+    <button class="nav-item" onclick="showPage('progress')"><span class="icon">▲</span> Progress</button>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Planning</div>
+    <button class="nav-item" onclick="showPage('split')"><span class="icon">⊕</span> Account Split</button>
+    <button class="nav-item" onclick="showPage('bills')"><span class="icon">◷</span> Bills & Dues</button>
+    <button class="nav-item" onclick="showPage('debts')"><span class="icon">⇄</span> Debt Tracker</button>
+  </div>
+
+  <div class="nav-section">
+    <div class="nav-label">Data</div>
+    <button class="nav-item" onclick="showPage('transactions')"><span class="icon">≡</span> Transactions</button>
+    <button class="nav-item" onclick="showPage('import')"><span class="icon">↑</span> Import CSV</button>
+  </div>
+
+  <div class="sidebar-balances">
+    <div class="bal-label">Live Balances</div>
+    <div class="bal-row"><div class="bal-dot" style="background:var(--hdfc)"></div><div class="bal-name">HDFC</div><div class="bal-val" id="sb-hdfc">₹8,919</div></div>
+    <div class="bal-row"><div class="bal-dot" style="background:var(--kotak)"></div><div class="bal-name">Kotak</div><div class="bal-val" id="sb-kotak">₹251</div></div>
+    <div class="bal-row"><div class="bal-dot" style="background:var(--slice)"></div><div class="bal-name">Slice</div><div class="bal-val" id="sb-slice">₹789</div></div>
+    <div class="bal-row" style="margin-top:6px;padding-top:6px;border-top:1px solid var(--border)">
+      <div class="bal-name" style="font-weight:700;color:var(--text)">Total</div>
+      <div class="bal-val" id="sb-total" style="color:var(--green)">₹9,959</div>
+    </div>
+    <div style="font-size:10px;color:var(--text3);margin-top:6px;padding-bottom:16px;font-family:'JetBrains Mono',monospace">+ ₹500 cash</div>
+  </div>
+</nav>
+
+<!-- ── MAIN ── -->
+<main class="main">
+
+<!-- DASHBOARD -->
+<div class="page active" id="page-dashboard">
+  <div class="page-header">
+    <div class="page-title">Dashboard <span>June '26</span></div>
+    <div class="page-sub">// 185 transactions loaded · May 4 – Jun 2, 2026</div>
+  </div>
+
+  <div class="acct-cards">
+    <div class="acct-card hdfc">
+      <div class="acct-name">HDFC Bank</div>
+      <div class="acct-bal">₹8,919.07</div>
+      <div class="acct-role">income account · main obligations</div>
+    </div>
+    <div class="acct-card kotak">
+      <div class="acct-name">Kotak 811</div>
+      <div class="acct-bal">₹251.05</div>
+      <div class="acct-role">daily spending account</div>
+    </div>
+    <div class="acct-card slice">
+      <div class="acct-name">Slice</div>
+      <div class="acct-bal">₹789.42</div>
+      <div class="acct-role">savings · daily interest</div>
+    </div>
+  </div>
+
+  <div class="cards" id="dash-cards"></div>
+
+  <div class="charts-2col">
+    <div class="chart-wrap">
+      <div class="chart-title">Expense Categories (All Time)</div>
+      <div class="h240"><canvas id="catPie"></canvas></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Income vs Expense by Month</div>
+      <div class="h240"><canvas id="monthBar"></canvas></div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <div class="chart-title">Daily Spending — Last 30 Days</div>
+    <div class="h180"><canvas id="dailyLine"></canvas></div>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table-header">
+      <div class="table-title">Recent Transactions</div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Date</th><th>Account</th><th>Note</th><th>Category</th><th>Amount</th></tr></thead>
+        <tbody id="recent-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- PROGRESS -->
+<div class="page" id="page-progress">
+  <div class="page-header">
+    <div class="page-title">Progress <span>Tracker</span></div>
+    <div class="page-sub">// month-over-month performance</div>
+  </div>
+  <div id="progress-months"></div>
+  <div class="chart-wrap">
+    <div class="chart-title">Net Balance Trend</div>
+    <div class="h240"><canvas id="netTrend"></canvas></div>
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-title">Category Spend — May vs June</div>
+    <div class="h280"><canvas id="catCompare"></canvas></div>
+  </div>
+</div>
+
+<!-- ACCOUNT SPLIT -->
+<div class="page" id="page-split">
+  <div class="page-header">
+    <div class="page-title">Account <span>Split</span></div>
+    <div class="page-sub">// recommended allocation of current funds</div>
+  </div>
+  <div id="split-content"></div>
+</div>
+
+<!-- BILLS -->
+<div class="page" id="page-bills">
+  <div class="page-header">
+    <div class="page-title">Bills <span>& Dues</span></div>
+    <div class="page-sub">// upcoming payments this month</div>
+  </div>
+  <div class="bills-list" id="bills-list"></div>
+  <div class="table-wrap" style="margin-top:8px">
+    <div class="table-header" style="justify-content:space-between">
+      <div class="table-title">Add Bill / Due</div>
+    </div>
+    <div style="padding:16px">
+      <div class="form-row">
+        <div><label class="form-label">Name</label><input id="bill-name" placeholder="e.g. Netflix" style="width:100%"></div>
+        <div><label class="form-label">Amount (₹)</label><input id="bill-amt" type="number" placeholder="199" style="width:100%"></div>
+        <div><label class="form-label">Due Date</label><input id="bill-date" type="date" style="width:100%"></div>
+        <div style="padding-top:18px"><button class="btn-accent btn-sm" style="padding:8px 16px;font-size:12px" onclick="addBill()">+ Add</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DEBTS -->
+<div class="page" id="page-debts">
+  <div class="page-header">
+    <div class="page-title">Debt <span>Tracker</span></div>
+    <div class="page-sub">// what you owe · what you're owed</div>
+  </div>
+  <div class="cards" id="debt-summary-cards"></div>
+  <div class="debt-grid">
+    <div>
+      <div class="debt-section-title">🔴 You Owe</div>
+      <div id="you-owe-list"></div>
+      <button class="add-btn" onclick="addDebt('owe')">+ Add debt you owe</button>
+    </div>
+    <div>
+      <div class="debt-section-title">🟢 Owed to You</div>
+      <div id="owed-list"></div>
+      <button class="add-btn" onclick="addDebt('owed')">+ Add debt owed to you</button>
+    </div>
+  </div>
+</div>
+
+<!-- TRANSACTIONS -->
+<div class="page" id="page-transactions">
+  <div class="page-header">
+    <div class="page-title">All <span>Transactions</span></div>
+    <div class="page-sub">// full history · <span id="tx-count">185</span> records</div>
+  </div>
+  <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+    <select id="filter-account" onchange="renderTransactions()" style="min-width:130px">
+      <option value="">All Accounts</option>
+      <option>HDFC</option><option>Kotak 811</option><option>Slice</option>
+    </select>
+    <select id="filter-type" onchange="renderTransactions()" style="min-width:120px">
+      <option value="">All Types</option>
+      <option>Expenses</option><option>Income</option>
+    </select>
+    <select id="filter-month" onchange="renderTransactions()" style="min-width:120px">
+      <option value="">All Months</option>
+      <option value="2026-05">May 2026</option>
+      <option value="2026-06">June 2026</option>
+    </select>
+    <input id="filter-search" placeholder="Search notes..." oninput="renderTransactions()" style="min-width:160px">
+  </div>
+  <div class="table-wrap">
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Date</th><th>Account</th><th>Note</th><th>Category</th><th>Type</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody id="all-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- IMPORT -->
+<div class="page" id="page-import">
+  <div class="page-header">
+    <div class="page-title">Import <span>CSV</span></div>
+    <div class="page-sub">// merge new wallet data into history</div>
+  </div>
+  <div class="import-zone" id="import-zone" onclick="document.getElementById('csv-input').click()" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event)">
+    <div class="import-icon">↑</div>
+    <div class="import-title">Drop your CSV here or click to browse</div>
+    <div class="import-sub">Wallet-by-Budget format · semicolon-separated · will merge with existing data</div>
+    <input type="file" id="csv-input" accept=".csv" onchange="handleFile(event)">
+  </div>
+  <div class="chart-wrap">
+    <div class="chart-title">Import History</div>
+    <div id="import-log" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text3);line-height:1.8">
+      <div style="color:var(--green)">✓ May 2026 — 163 transactions loaded (preloaded)</div>
+      <div style="color:var(--green)">✓ Jun 1–2 2026 — 22 transactions loaded (preloaded)</div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+// DATA
+// ═══════════════════════════════════════════════
+let TRANSACTIONS = [{"date":"2026-06-02","account":"Slice","category":"Financial expenses","note":"To frnd","amount":-50.0,"type":"Expenses","transfer":false},{"date":"2026-06-02","account":"Slice","category":"Refunds (tax, purchase)","note":"Snacks","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-06-02","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-06-02","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.15,"type":"Income","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Loan, interests","note":"Repayment to frnd","amount":-1000.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Loan, interests","note":"SnapMint EMI","amount":-440.97,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-25.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Financial expenses","note":"To mom","amount":-14500.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Stationery, tools","note":"","amount":-12.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":100.0,"type":"Income","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Financial expenses","note":"To frnd","amount":-50.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-85.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Rental income","note":"Rent from Chennai","amount":24500.0,"type":"Income","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.03,"type":"Income","transfer":false},{"date":"2026-06-01","account":"HDFC","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-90.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Fuel","note":"","amount":-300.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"Financial expenses","note":"Paradox ID Cards","amount":-31840.0,"type":"Expenses","transfer":false},{"date":"2026-06-01","account":"Slice","category":"TRANSFER","note":"For paradox id cards","amount":33000.0,"type":"Income","transfer":true},{"date":"2026-06-01","account":"Kotak 811","category":"TRANSFER","note":"For paradox id cards","amount":-33000.0,"type":"Expenses","transfer":true},{"date":"2026-06-01","account":"Kotak 811","category":"Financial expenses","note":"For paradox from Vignesh","amount":14000.0,"type":"Income","transfer":false},{"date":"2026-05-31","account":"Kotak 811","category":"Charges, Fees","note":"Annual Subscription for 811 super","amount":-499.0,"type":"Expenses","transfer":false},{"date":"2026-05-31","account":"Kotak 811","category":"Software, apps, games","note":"For webops","amount":-2738.78,"type":"Expenses","transfer":false},{"date":"2026-05-31","account":"Kotak 811","category":"Income","note":"From frnd for webops","amount":2740.0,"type":"Income","transfer":false},{"date":"2026-05-31","account":"Slice","category":"Food & Drinks","note":"Daily Intrest","amount":0.03,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Financial expenses","note":"To frnd","amount":-600.0,"type":"Expenses","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Refunds (tax, purchase)","note":"Cashback","amount":7.0,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Software, apps, games","note":"For claude","amount":-1995.17,"type":"Expenses","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"Income","note":"From frnd for claude","amount":2600.0,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Kotak 811","category":"TRANSFER","note":"","amount":20000.0,"type":"Income","transfer":true},{"date":"2026-05-30","account":"HDFC","category":"TRANSFER","note":"","amount":-20000.0,"type":"Expenses","transfer":true},{"date":"2026-05-30","account":"HDFC","category":"Loan, interests","note":"From dad for iitm paradox","amount":20000.0,"type":"Income","transfer":false},{"date":"2026-05-30","account":"Slice","category":"Food & Drinks","note":"Daily Intrest","amount":0.03,"type":"Income","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"Public transport","note":"Bus from sastra to tvs tollgate","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"Refunds (tax, purchase)","note":"From frnd","amount":24.0,"type":"Income","transfer":false},{"date":"2026-05-29","account":"Kotak 811","category":"TRANSFER","note":"","amount":130.0,"type":"Income","transfer":true},{"date":"2026-05-29","account":"HDFC","category":"TRANSFER","note":"","amount":-130.0,"type":"Expenses","transfer":true},{"date":"2026-05-29","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-45.0,"type":"Expenses","transfer":false},{"date":"2026-05-29","account":"Slice","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-28","account":"HDFC","category":"Food & Drinks","note":"Snacks from instamart","amount":-248.0,"type":"Expenses","transfer":false},{"date":"2026-05-28","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-28","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-27","account":"HDFC","category":"Software, apps, games","note":"For Spotify","amount":-69.0,"type":"Expenses","transfer":false},{"date":"2026-05-27","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-26","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.04,"type":"Income","transfer":false},{"date":"2026-05-25","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-26.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Kotak 811","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Food & Drinks","note":"Lunch","amount":-280.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Public transport","note":"Bus from sastra to tvs tollgate","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Restaurant, fast-food","note":"Snacks","amount":-15.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Restaurant, fast-food","note":"Snacks","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Phone, cell phone","note":"Recharge for frnd","amount":-99.0,"type":"Expenses","transfer":false},{"date":"2026-05-25","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.11,"type":"Income","transfer":false},{"date":"2026-05-24","account":"Slice","category":"Groceries","note":"Snacks from instamart","amount":-231.0,"type":"Expenses","transfer":false},{"date":"2026-05-24","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.15,"type":"Income","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-80.0,"type":"Expenses","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Phone, cell phone","note":"Daily Intrest","amount":0.16,"type":"Income","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Phone, cell phone","note":"Recharge for frnd","amount":-37.97,"type":"Expenses","transfer":false},{"date":"2026-05-23","account":"Slice","category":"Food & Drinks","note":"Lunch","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Slice","category":"Refunds (tax, purchase)","note":"From frnd","amount":200.0,"type":"Income","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Public transport","note":"Bus from sastra to tvs tollgate","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-83.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Refunds (tax, purchase)","note":"Cashback","amount":9.0,"type":"Income","transfer":false},{"date":"2026-05-22","account":"Kotak 811","category":"Public transport","note":"Bus from tvs tollgate to sastra","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-22","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.16,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.23,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Kotak 811","category":"Financial expenses","note":"UPI/MAHALAKSHMI V","amount":-400.0,"type":"Expenses","transfer":false},{"date":"2026-05-21","account":"Kotak 811","category":"Food & Drinks","note":"UPI/MPMMUTHU GENERA","amount":-70.0,"type":"Expenses","transfer":false},{"date":"2026-05-21","account":"Kotak 811","category":"Income","note":"UPI/MAHALAKSHMI V","amount":500.0,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Phone, cell phone","note":"Recharge for frnd","amount":-446.88,"type":"Expenses","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.26,"type":"Income","transfer":false},{"date":"2026-05-21","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-20","account":"Kotak 811","category":"Transportation","note":"TNSTC bus","amount":-35.0,"type":"Expenses","transfer":false},{"date":"2026-05-20","account":"Slice","category":"Food & Drinks","note":"Chicken Biryani","amount":-220.0,"type":"Expenses","transfer":false},{"date":"2026-05-20","account":"HDFC","category":"Education, development","note":"IITM Fees","amount":-22612.98,"type":"Expenses","transfer":false},{"date":"2026-05-20","account":"HDFC","category":"Income","note":"For IITM Fees","amount":23000.0,"type":"Income","transfer":false},{"date":"2026-05-19","account":"Slice","category":"Food & Drinks","note":"Snacks","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-19","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-19","account":"Slice","category":"Loan, interests","note":"To frnd","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-19","account":"HDFC","category":"Charges, Fees","note":"Hdfc international transaction fee","amount":-1.98,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":20.0,"type":"Income","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Public transport","note":"Bus","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-10.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Holiday, trips, hotels","note":"Hotel","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Azhagesan restaurant","amount":-155.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Income","note":"Income","amount":20.0,"type":"Income","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Food & Drinks","note":"Restaurant","amount":-180.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Kotak 811","category":"Charges, Fees","note":"Charges","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-18","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Food & Drinks","note":"Oracle Singapore charge","amount":-108.42,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Food & Drinks","note":"Oracle Singapore charge","amount":-108.42,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"Oracle Singapore refund","amount":108.42,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Electronics, accessories","note":"AWS India","amount":-2.0,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-60.0,"type":"Expenses","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"AWS refund","amount":2.0,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"Oracle Singapore refund","amount":108.42,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Kotak 811","category":"Income","note":"From Allen Daniel","amount":100.0,"type":"Income","transfer":false},{"date":"2026-05-17","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-16","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.3,"type":"Income","transfer":false},{"date":"2026-05-16","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":340.0,"type":"Income","transfer":false},{"date":"2026-05-16","account":"Kotak 811","category":"Income","note":"From Sahasrajith","amount":300.0,"type":"Income","transfer":false},{"date":"2026-05-15","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Software, apps, games","note":"Spotify","amount":-69.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Transportation","note":"TNSTC bus","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Food & Drinks","note":"Azhagesan restaurant","amount":-115.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-25.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Kotak 811","category":"Food & Drinks","note":"Snacks","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Slice","category":"Financial expenses","note":"Transfer to kotak 811","amount":-700.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"Slice","category":"Software, apps, games","note":"App Subscription","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-15","account":"HDFC","category":"Financial expenses","note":"To mom","amount":-2450.0,"type":"Expenses","transfer":false},{"date":"2026-05-14","account":"HDFC","category":"Refunds (tax, purchase)","note":"Reimbursement from mom","amount":800.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":8.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-14","account":"HDFC","category":"Education, development","note":"Counselling Fees","amount":-500.0,"type":"Expenses","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Others","note":"UPI T Shrinivasan","amount":-2000.0,"type":"Expenses","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Income","note":"Kotak credit","amount":700.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Interests, dividends","note":"Cashback earned","amount":6.0,"type":"Income","transfer":false},{"date":"2026-05-14","account":"Kotak 811","category":"Income","note":"Kotak credit","amount":2000.0,"type":"Income","transfer":false},{"date":"2026-05-13","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Fuel","note":"Petrol for bike","amount":-300.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Fuel","note":"Petrol","amount":-300.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Juice","amount":-75.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Chicken Kothu parota","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-13","account":"HDFC","category":"Food & Drinks","note":"Tea and coffee","amount":-25.0,"type":"Expenses","transfer":false},{"date":"2026-05-12","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-12","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-76.0,"type":"Expenses","transfer":false},{"date":"2026-05-12","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-11","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-11","account":"HDFC","category":"Refunds (tax, purchase)","note":"From frnd","amount":100.0,"type":"Income","transfer":false},{"date":"2026-05-11","account":"HDFC","category":"Public transport","note":"Bus SASTRA to TVS","amount":-37.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Taxi","note":"Rapido from Trichy junction","amount":-60.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Train Egmore to Trichy","amount":-140.65,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Food & Drinks","note":"Snacks for train","amount":-90.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Food & Drinks","note":"Coffee","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Platform ticket Egmore","amount":-9.7,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Koyambedu to Egmore metro","amount":-24.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-40.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Tambaram to Kundrathur","amount":-11.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Transportation","note":"Platform ticket Tambaram","amount":-9.7,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":7.0,"type":"Income","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Kilambakkam to Tambaram","amount":-19.0,"type":"Expenses","transfer":false},{"date":"2026-05-10","account":"HDFC","category":"Public transport","note":"Kilambakkam to Tambaram","amount":-19.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Groceries","note":"Snacks for bus","amount":-75.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Health and beauty","note":"Hair band","amount":-20.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-50.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Food & Drinks","note":"Snacks for mom","amount":-32.0,"type":"Expenses","transfer":false},{"date":"2026-05-09","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-09","account":"HDFC","category":"Refunds (tax, purchase)","note":"Refund","amount":422.0,"type":"Income","transfer":false},{"date":"2026-05-08","account":"HDFC","category":"Software, apps, games","note":"For Spotify","amount":-200.0,"type":"Expenses","transfer":false},{"date":"2026-05-08","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-08","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-70.0,"type":"Expenses","transfer":false},{"date":"2026-05-07","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-07","account":"HDFC","category":"Food & Drinks","note":"Snacks","amount":-130.0,"type":"Expenses","transfer":false},{"date":"2026-05-06","account":"HDFC","category":"Food & Drinks","note":"Coffee","amount":-55.0,"type":"Expenses","transfer":false},{"date":"2026-05-06","account":"HDFC","category":"Groceries","note":"Popcorn","amount":-56.0,"type":"Expenses","transfer":false},{"date":"2026-05-06","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-06","account":"Slice","category":"Refunds (tax, purchase)","note":"Cashback","amount":0.87,"type":"Income","transfer":false},{"date":"2026-05-06","account":"HDFC","category":"Groceries","note":"Snacks","amount":-193.86,"type":"Expenses","transfer":false},{"date":"2026-05-05","account":"Slice","category":"Financial expenses","note":"Repayment to frnd","amount":-500.0,"type":"Expenses","transfer":false},{"date":"2026-05-05","account":"HDFC","category":"Food & Drinks","note":"2 chapati","amount":-30.0,"type":"Expenses","transfer":false},{"date":"2026-05-05","account":"Slice","category":"Refunds (tax, purchase)","note":"From frnd","amount":500.0,"type":"Income","transfer":false},{"date":"2026-05-05","account":"Slice","category":"Refunds (tax, purchase)","note":"Daily Intrest","amount":0.43,"type":"Income","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Refunds (tax, purchase)","note":"Reimbursement from mom","amount":3419.0,"type":"Income","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":7.0,"type":"Income","transfer":false},{"date":"2026-05-04","account":"Slice","category":"TRANSFER","note":"Savings","amount":3000.0,"type":"Income","transfer":true},{"date":"2026-05-04","account":"HDFC","category":"TRANSFER","note":"Savings","amount":-3000.0,"type":"Expenses","transfer":true},{"date":"2026-05-04","account":"HDFC","category":"Loan, interests","note":"Repayment to Anirudh","amount":-1000.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Financial expenses","note":"To mom","amount":-14500.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Groceries","note":"Banana","amount":-41.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Phone, cell phone","note":"Recharge for frnd","amount":-450.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Vehicle maintenance","note":"Bike service","amount":-1343.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Taxi","note":"Auto to TVS showroom","amount":-130.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Refunds (tax, purchase)","note":"Cashback","amount":10.0,"type":"Income","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Education, development","note":"Claude Subscription","amount":-1000.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Public transport","note":"Bus for Chennai exam","amount":-1210.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Taxi","note":"Auto from TVS showroom","amount":-100.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Phone, cell phone","note":"Airtel Postpaid Recharge","amount":-94.27,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Loan, interests","note":"SnapMint EMI","amount":-1088.0,"type":"Expenses","transfer":false},{"date":"2026-05-04","account":"HDFC","category":"Software, apps, games","note":"Software","amount":-1.0,"type":"Expenses","transfer":false}];
+
+// ── BILLS STATE ──
+let BILLS = [
+  {id:1,name:'Airtel Postpaid',amount:100,date:'2026-06-03',paid:false,urgent:true},
+  {id:2,name:'Jio Postpaid',amount:349,date:'2026-06-23',paid:false,urgent:false},
+  {id:3,name:'YouTube Premium',amount:89,date:'2026-06-26',paid:false,urgent:false},
+  {id:4,name:'Spotify',amount:69,date:'2026-06-27',paid:false,urgent:false},
+];
+
+// ── DEBT STATE ──
+let DEBTS = {
+  owe:[
+    {id:1,person:'Friend 1',total:1900,paid:0,monthly:1000,note:'Until ~Dec 2026'},
+    {id:2,person:'Friend 2',total:1500,paid:0,monthly:0,note:''},
+    {id:3,person:'Friend 3',total:2500,paid:0,monthly:0,note:''},
+    {id:4,person:'Dad',total:20000,paid:0,monthly:0,note:'Paradox repayment — due once IITM pays'},
+  ],
+  owed:[
+    {id:1,person:'Mom',total:2450,paid:0,monthly:0,note:'Owes you'},
+    {id:2,person:'Friend A',total:300,paid:0,monthly:0,note:'Owes you'},
+    {id:3,person:'Friend B',total:100,paid:0,monthly:0,note:'Owes you'},
+    {id:4,person:'Reimbursement',total:700,paid:0,monthly:0,note:'Pending reimbursement'},
+    {id:5,person:'IITM Paradox',total:17840,paid:0,monthly:0,note:'Expected Jun 4 evening'},
+  ]
+};
+
+let billIdCounter = 10;
+let debtIdCounter = 20;
+
+// ═══════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════
+const fmt = v => '₹' + Math.abs(v).toLocaleString('en-IN', {minimumFractionDigits:0,maximumFractionDigits:0});
+const fmtD = v => '₹' + Math.abs(v).toLocaleString('en-IN', {minimumFractionDigits:2,maximumFractionDigits:2});
+
+function nonTransfer(){ return TRANSACTIONS.filter(t=>!t.transfer); }
+function expenses(){ return nonTransfer().filter(t=>t.type==='Expenses'); }
+function income(){ return nonTransfer().filter(t=>t.type==='Income'); }
+function byMonth(arr,m){ return arr.filter(t=>t.date.startsWith(m)); }
+
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+const ACCT_COLORS = {'HDFC':'#c0392b','Kotak 811':'#00bcd4','Slice':'#e91e8c'};
+const CAT_COLORS_LIST = ['#7c6af5','#27ae60','#e74c3c','#f39c12','#3498db','#9b59b6','#e67e22','#1abc9c','#e91e8c','#00bcd4','#ff6b6b','#ffd93d'];
+
+// ═══════════════════════════════════════════════
+// PAGE ROUTING
+// ═══════════════════════════════════════════════
+function showPage(id){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>{
+    if(n.getAttribute('onclick')&&n.getAttribute('onclick').includes("'"+id+"'")) n.classList.add('active');
+  });
+  if(id==='transactions') renderTransactions();
+  if(id==='bills') renderBills();
+  if(id==='debts') renderDebts();
+  if(id==='split') renderSplit();
+    if(id==='progress') renderProgress();
+}
+
+// ═══════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════
+function initDashboard(){
+  const exp = expenses(), inc = income();
+  const totalExp = exp.reduce((s,t)=>s+Math.abs(t.amount),0);
+  const totalInc = inc.reduce((s,t)=>s+t.amount,0);
+  const net = totalInc - totalExp;
+  const mayExp = byMonth(exp,'2026-05').reduce((s,t)=>s+Math.abs(t.amount),0);
+  const junExp = byMonth(exp,'2026-06').reduce((s,t)=>s+Math.abs(t.amount),0);
+  const days = 30;
+  const avgDay = mayExp/days;
+
+  document.getElementById('dash-cards').innerHTML = `
+    <div class="card"><div class="card-label">All-time Expenses</div><div class="card-val neg">${fmt(totalExp)}</div><div class="card-sub">185 transactions</div></div>
+    <div class="card"><div class="card-label">All-time Income</div><div class="card-val pos">${fmt(totalInc)}</div><div class="card-sub">excl. transfers</div></div>
+    <div class="card"><div class="card-label">Net P&L</div><div class="card-val ${net>=0?'pos':'neg'}">${net>=0?'+':'−'}${fmt(net)}</div><div class="card-sub">May–Jun combined</div></div>
+    <div class="card"><div class="card-label">Avg/Day (May)</div><div class="card-val gold">${fmt(avgDay)}</div><div class="card-sub">28 tracked days</div></div>
+    <div class="card"><div class="card-label">Jun spend so far</div><div class="card-val neg">${fmt(junExp)}</div><div class="card-sub">first 2 days</div></div>
+    <div class="card accent-border"><div class="card-label">Total Balance</div><div class="card-val pos">₹10,459</div><div class="card-sub">all accts + ₹500 cash</div></div>
+  `;
+
+  // Category pie
+  const catMap={};
+  exp.forEach(t=>{const k=t.category;catMap[k]=(catMap[k]||0)+Math.abs(t.amount);});
+  const sortedCats=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  new Chart(document.getElementById('catPie'),{
+    type:'doughnut',
+    data:{labels:sortedCats.map(c=>c[0]),datasets:[{data:sortedCats.map(c=>c[1]),backgroundColor:CAT_COLORS_LIST,borderWidth:2,borderColor:'#111114'}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',plugins:{legend:{display:true,position:'right',labels:{color:'#9896a0',font:{size:9,family:'JetBrains Mono'},boxWidth:8,padding:8}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}}}
+  });
+
+  // Month bar
+  const mayInc=byMonth(inc,'2026-05').reduce((s,t)=>s+t.amount,0);
+  const junInc=byMonth(inc,'2026-06').reduce((s,t)=>s+t.amount,0);
+  new Chart(document.getElementById('monthBar'),{
+    type:'bar',
+    data:{labels:['May 2026','Jun 2026 (partial)'],datasets:[
+      {label:'Income',data:[mayInc,junInc],backgroundColor:'rgba(39,174,96,0.7)',borderRadius:4,borderWidth:0},
+      {label:'Expenses',data:[mayExp,junExp],backgroundColor:'rgba(231,76,60,0.7)',borderRadius:4,borderWidth:0}
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#9896a0',font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#9896a0',font:{size:10}}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#9896a0',font:{size:10},callback:v=>'₹'+Math.round(v/1000)+'k'}}}}
+  });
+
+  // Daily line
+  const last30 = exp.filter(t=>t.date>='2026-05-03').sort((a,b)=>a.date.localeCompare(b.date));
+  const dayMap={};
+  last30.forEach(t=>{dayMap[t.date]=(dayMap[t.date]||0)+Math.abs(t.amount);});
+  const dayKeys=Object.keys(dayMap).sort();
+  new Chart(document.getElementById('dailyLine'),{
+    type:'line',
+    data:{labels:dayKeys.map(d=>d.slice(5)),datasets:[{data:dayKeys.map(d=>dayMap[d]),borderColor:'#7c6af5',borderWidth:2,pointRadius:2,pointBackgroundColor:'#7c6af5',fill:true,backgroundColor:'rgba(124,106,245,0.07)',tension:0.3}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#9896a0',font:{size:9},maxRotation:45,autoSkip:true,maxTicksLimit:15}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#9896a0',font:{size:9},callback:v=>'₹'+Math.round(v/1000)+'k'}}}}
+  });
+
+  // Recent transactions
+  const recent = TRANSACTIONS.slice(0,20);
+  const tbody = document.getElementById('recent-tbody');
+  tbody.innerHTML = recent.map(t=>`
+    <tr>
+      <td class="mono">${t.date.slice(5)}</td>
+      <td><span class="pill ${t.account.toLowerCase().replace(' 811','').replace(' ','')}">${t.account}</span></td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.note||'—'}</td>
+      <td style="color:var(--text3);font-size:11px">${t.category}</td>
+      <td class="${t.transfer?'transfer-amt':t.amount>0?'pos':'neg'}">${t.transfer?'⇄ ':''}${t.amount>0?'+':'−'}${fmtD(t.amount)}</td>
+    </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════
+// TRANSACTIONS
+// ═══════════════════════════════════════════════
+function renderTransactions(){
+  const acc=document.getElementById('filter-account').value;
+  const type=document.getElementById('filter-type').value;
+  const month=document.getElementById('filter-month').value;
+  const search=document.getElementById('filter-search').value.toLowerCase();
+  let rows=TRANSACTIONS.filter(t=>{
+    if(acc&&t.account!==acc) return false;
+    if(type&&t.type!==type) return false;
+    if(month&&!t.date.startsWith(month)) return false;
+    if(search&&!(t.note||'').toLowerCase().includes(search)&&!t.category.toLowerCase().includes(search)) return false;
+    return true;
+  });
+  document.getElementById('tx-count').textContent=rows.length;
+  document.getElementById('all-tbody').innerHTML=rows.map(t=>`
+    <tr>
+      <td class="mono">${t.date}</td>
+      <td><span class="pill ${t.account.toLowerCase().replace(' 811','').replace(' ','')}">${t.account}</span></td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.note||'—'}</td>
+      <td style="color:var(--text3);font-size:11px">${t.category}</td>
+      <td style="font-size:11px;color:${t.transfer?'var(--blue)':t.type==='Income'?'var(--text3)':'var(--text3)'}">${t.transfer?'Transfer':t.type}</td>
+      <td class="${t.transfer?'transfer-amt':t.amount>0?'pos':'neg'}">${t.transfer?'⇄ ':''}${t.amount>0?'+':'−'}${fmtD(t.amount)}</td>
+    </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════
+// BILLS
+// ═══════════════════════════════════════════════
+function renderBills(){
+  const today=new Date();
+  const list=document.getElementById('bills-list');
+  const upcoming=BILLS.filter(b=>!b.paid).sort((a,b)=>a.date.localeCompare(b.date));
+  const paid=BILLS.filter(b=>b.paid);
+  const totalDue=upcoming.reduce((s,b)=>s+b.amount,0);
+
+  let html=`<div class="cards" style="margin-bottom:16px">
+    <div class="card"><div class="card-label">Total Due This Month</div><div class="card-val neg">${fmt(totalDue)}</div><div class="card-sub">${upcoming.length} bills remaining</div></div>
+    <div class="card"><div class="card-label">Paid This Month</div><div class="card-val pos">${fmt(paid.reduce((s,b)=>s+b.amount,0))}</div><div class="card-sub">${paid.length} bills cleared</div></div>
+  </div>`;
+
+  upcoming.forEach(b=>{
+    const d=new Date(b.date);
+    const diff=Math.ceil((d-today)/(1000*60*60*24));
+    const urgency=diff<=2?'urgent':diff<=7?'soon':'ok';
+    const dotColor=diff<=2?'var(--red)':diff<=7?'var(--gold)':'var(--green)';
+    const daysLabel=diff<0?`${Math.abs(diff)}d overdue`:diff===0?'Today':diff===1?'Tomorrow':`In ${diff} days`;
+    html+=`<div class="bill-item ${urgency}">
+      <div class="bill-left">
+        <div class="bill-dot" style="background:${dotColor}"></div>
+        <div>
+          <div class="bill-name">${b.name}</div>
+          <div class="bill-date">${b.date} · ${daysLabel}</div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="bill-amt">${fmt(b.amount)}</div>
+        <button class="btn-sm btn-success" onclick="markBillPaid(${b.id})">✓ Paid</button>
+        <button class="btn-sm btn-danger" onclick="deleteBill(${b.id})">✕</button>
+      </div>
+    </div>`;
+  });
+
+  if(paid.length){
+    html+=`<div style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin:16px 0 8px">Paid</div>`;
+    paid.forEach(b=>{
+      html+=`<div class="bill-item ok" style="opacity:0.5">
+        <div class="bill-left"><div class="bill-dot" style="background:var(--green)"></div><div><div class="bill-name" style="text-decoration:line-through">${b.name}</div><div class="bill-date">${b.date}</div></div></div>
+        <div class="bill-amt" style="color:var(--green)">${fmt(b.amount)} ✓</div>
+      </div>`;
+    });
+  }
+  list.innerHTML=html;
+}
+
+function addBill(){
+  const name=document.getElementById('bill-name').value;
+  const amt=parseFloat(document.getElementById('bill-amt').value);
+  const date=document.getElementById('bill-date').value;
+  if(!name||!amt||!date){toast('Fill all fields'); return;}
+  BILLS.push({id:++billIdCounter,name,amount:amt,date,paid:false});
+  document.getElementById('bill-name').value='';
+  document.getElementById('bill-amt').value='';
+  document.getElementById('bill-date').value='';
+  renderBills(); toast('Bill added');
+}
+
+function markBillPaid(id){
+  const b=BILLS.find(b=>b.id===id);
+  if(b){b.paid=true; renderBills(); toast(`${b.name} marked paid ✓`);}
+}
+function deleteBill(id){
+  BILLS=BILLS.filter(b=>b.id!==id); renderBills(); toast('Bill removed');
+}
+
+// ═══════════════════════════════════════════════
+// DEBTS
+// ═══════════════════════════════════════════════
+function renderDebts(){
+  const totalOwe=DEBTS.owe.reduce((s,d)=>s+(d.total-d.paid),0);
+  const totalOwed=DEBTS.owed.reduce((s,d)=>s+(d.total-d.paid),0);
+  document.getElementById('debt-summary-cards').innerHTML=`
+    <div class="card"><div class="card-label">You Owe (Total)</div><div class="card-val neg">${fmt(totalOwe)}</div><div class="card-sub">${DEBTS.owe.length} obligations</div></div>
+    <div class="card"><div class="card-label">Owed to You</div><div class="card-val pos">${fmt(totalOwed)}</div><div class="card-sub">${DEBTS.owed.length} pending</div></div>
+    <div class="card"><div class="card-label">Net Debt Position</div><div class="card-val ${totalOwed-totalOwe>=0?'pos':'neg'}">${totalOwed-totalOwe>=0?'+':''}${fmt(totalOwed-totalOwe)}</div><div class="card-sub">${totalOwed>totalOwe?'net positive':'net negative'}</div></div>
+  `;
+
+  const oweHtml=DEBTS.owe.map(d=>{
+    const rem=d.total-d.paid;
+    const pct=Math.round((d.paid/d.total)*100)||0;
+    return `<div class="debt-item">
+      <div class="debt-item-header"><span class="debt-person">${d.person}</span><span class="debt-amount owe">${fmt(rem)}</span></div>
+      <div class="debt-meta"><span>Total: ${fmt(d.total)}</span>${d.monthly?`<span>₹${d.monthly}/mo</span>`:''}</div>
+      ${d.note?`<div style="font-size:10px;color:var(--text3);margin-top:4px">${d.note}</div>`:''}
+      <div class="debt-progress"><div class="debt-progress-bar" style="width:${pct}%;background:var(--red)"></div></div>
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn-sm btn-ghost" onclick="logPayment('owe',${d.id})">Log payment</button>
+        <button class="btn-sm btn-danger" onclick="removeDebt('owe',${d.id})">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  const owedHtml=DEBTS.owed.map(d=>{
+    const rem=d.total-d.paid;
+    return `<div class="debt-item">
+      <div class="debt-item-header"><span class="debt-person">${d.person}</span><span class="debt-amount owed">${fmt(rem)}</span></div>
+      ${d.note?`<div style="font-size:10px;color:var(--text3);margin-top:2px">${d.note}</div>`:''}
+      <div style="display:flex;gap:6px;margin-top:8px">
+        <button class="btn-sm btn-ghost" onclick="logReceived(${d.id})">Mark received</button>
+        <button class="btn-sm btn-danger" onclick="removeDebt('owed',${d.id})">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('you-owe-list').innerHTML=oweHtml;
+  document.getElementById('owed-list').innerHTML=owedHtml;
+}
+
+function logPayment(type,id){
+  const amt=parseFloat(prompt('Amount paid (₹):'));
+  if(isNaN(amt)||amt<=0) return;
+  const d=DEBTS[type].find(d=>d.id===id);
+  if(d){d.paid=Math.min(d.total,d.paid+amt); renderDebts(); toast('Payment logged');}
+}
+function logReceived(id){
+  const d=DEBTS.owed.find(d=>d.id===id);
+  if(d){d.paid=d.total; renderDebts(); toast(`${d.person} — marked as received ✓`);}
+}
+function removeDebt(type,id){
+  DEBTS[type]=DEBTS[type].filter(d=>d.id!==id); renderDebts(); toast('Entry removed');
+}
+function addDebt(type){
+  const person=prompt('Person / description:'); if(!person) return;
+  const total=parseFloat(prompt('Total amount (₹):')); if(isNaN(total)) return;
+  const note=prompt('Note (optional, press Enter to skip):')||'';
+  DEBTS[type].push({id:++debtIdCounter,person,total,paid:0,monthly:0,note});
+  renderDebts(); toast('Added ✓');
+}
+
+// ═══════════════════════════════════════════════
+// ACCOUNT SPLIT
+// ═══════════════════════════════════════════════
+function renderSplit(){
+  const total = 9959; // current live total
+  const cash = 500;
+
+  const recs = [
+    {from:'HDFC',to:'Kotak 811',amount:3700,reason:'Top up daily spending float to ~₹4,000 for rest of June'},
+    {from:'HDFC',to:'Slice',amount:2000,reason:'Park in savings to earn daily interest'},
+  ];
+
+  const after = {
+    HDFC: 8919 - 3700 - 2000,
+    Kotak: 251 + 3700,
+    Slice: 789 + 2000,
+  };
+
+  const obligations = [
+    {name:'Airtel Postpaid',amount:100,when:'Jun 3',account:'Slice/Kotak'},
+    {name:'Jio Postpaid',amount:349,when:'Jun 23',account:'Kotak'},
+    {name:'YouTube Premium',amount:89,when:'Jun 26',account:'Kotak'},
+    {name:'Spotify',amount:69,when:'Jun 27',account:'Kotak'},
+    {name:'Dad repayment',amount:20000,when:'After IITM pays',account:'HDFC (from Paradox ₹17,840 + ₹2,160 HDFC)'},
+  ];
+
+  document.getElementById('split-content').innerHTML=`
+    <div class="recommendation">
+      <div class="rec-title">⊕ Recommended transfers right now</div>
+      <div class="rec-body">You have ₹9,959 in accounts + ₹500 cash. All June obligations (mom ₹14,500, EMI, friend repayment) are already paid. This is free float for the rest of the month.</div>
+      <div class="rec-transfers">
+        ${recs.map(r=>`<div class="transfer-arrow">
+          <span style="color:var(--red)">${r.from}</span>
+          <span style="color:var(--text3)">→</span>
+          <span style="color:var(--green)">${r.to}</span>
+          <span style="color:var(--accent);margin-left:auto">${fmt(r.amount)}</span>
+          <span style="color:var(--text3);font-size:10px;margin-left:8px;font-family:'Space Grotesk',sans-serif">${r.reason}</span>
+        </div>`).join('')}
+      </div>
+    </div>
+
+    <div class="split-grid">
+      <div class="split-card">
+        <div class="split-title"><span style="color:var(--red)">●</span> Before split</div>
+        ${[['HDFC (income)',8919,'var(--hdfc)'],['Kotak (spending)',251,'var(--kotak)'],['Slice (savings)',789,'var(--slice)'],['Cash',500,'var(--text3)']].map(([n,v,c])=>`
+          <div class="split-row"><span class="split-name">${n}</span><span class="split-val" style="color:${c}">${fmt(v)}</span></div>
+          <div class="split-bar"><div class="split-bar-fill" style="width:${Math.round(v/(total+cash)*100)}%;background:${c}"></div></div>
+        `).join('')}
+      </div>
+      <div class="split-card">
+        <div class="split-title"><span style="color:var(--green)">●</span> After recommended split</div>
+        ${[['HDFC (income)',after.HDFC,'var(--hdfc)'],['Kotak (spending)',after.Kotak,'var(--kotak)'],['Slice (savings)',after.Slice,'var(--slice)'],['Cash',500,'var(--text3)']].map(([n,v,c])=>`
+          <div class="split-row"><span class="split-name">${n}</span><span class="split-val" style="color:${c}">${fmt(v)}</span></div>
+          <div class="split-bar"><div class="split-bar-fill" style="width:${Math.round(v/(total+cash)*100)}%;background:${c}"></div></div>
+        `).join('')}
+      </div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-title">Upcoming Obligations (June)</div>
+      <div class="table-scroll">
+        <table><thead><tr><th>Bill</th><th>Amount</th><th>Due</th><th>Account</th></tr></thead>
+        <tbody>${obligations.map(o=>`<tr><td>${o.name}</td><td class="neg">${fmt(o.amount)}</td><td class="mono">${o.when}</td><td style="color:var(--text3);font-size:11px">${o.account}</td></tr>`).join('')}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div style="padding:14px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--text2);line-height:1.7">
+      <strong style="color:var(--accent)">Once IITM ₹17,840 lands (Jun 4):</strong><br>
+      → Immediately send ₹20,000 to Dad (₹17,840 + ₹2,160 from HDFC)<br>
+      → Put any additional reimbursements (mom ₹2,450 + friends ₹400 + other ₹700 = ₹3,550) straight into Slice<br>
+      → Don't let Paradox money sit in Kotak — it'll get spent
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════════════════
+// PROGRESS
+// ═══════════════════════════════════════════════
+function renderProgress(){
+  const months=[{key:'2026-05',name:'May 2026'},{key:'2026-06',name:'June 2026 (partial)'}];
+  let html='';
+  const netData=[];
+  months.forEach(m=>{
+    const mExp=byMonth(expenses(),m.key).reduce((s,t)=>s+Math.abs(t.amount),0);
+    const mInc=byMonth(income(),m.key).reduce((s,t)=>s+t.amount,0);
+    const net=mInc-mExp;
+    netData.push({month:m.name,net,inc:mInc,exp:mExp});
+    const txCount=TRANSACTIONS.filter(t=>t.date.startsWith(m.key)).length;
+    html+=`<div class="progress-month">
+      <div class="month-header">
+        <div class="month-name">${m.name}</div>
+        <div class="month-badges"><span class="badge ${net>=0?'surplus':'deficit'}">${net>=0?'SURPLUS':'DEFICIT'} ${net>=0?'+':''}${fmt(net)}</span><span class="badge" style="background:var(--bg4);color:var(--text3)">${txCount} TX</span></div>
+      </div>
+      <div class="month-stats">
+        <div class="month-stat"><label>Income</label><span style="color:var(--green)">${fmt(mInc)}</span></div>
+        <div class="month-stat"><label>Expenses</label><span style="color:var(--red)">${fmt(mExp)}</span></div>
+        <div class="month-stat"><label>Net</label><span style="color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)}</span></div>
+      </div>
+    </div>`;
+  });
+  document.getElementById('progress-months').innerHTML=html;
+
+  // Net trend bar
+  new Chart(document.getElementById('netTrend'),{
+    type:'bar',
+    data:{labels:netData.map(d=>d.month),datasets:[
+      {label:'Income',data:netData.map(d=>d.inc),backgroundColor:'rgba(39,174,96,0.7)',borderRadius:4,borderWidth:0},
+      {label:'Expenses',data:netData.map(d=>d.exp),backgroundColor:'rgba(231,76,60,0.7)',borderRadius:4,borderWidth:0},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#9896a0',font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{display:false},ticks:{color:'#9896a0',font:{size:11}}},y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#9896a0',font:{size:10},callback:v=>'₹'+Math.round(v/1000)+'k'}}}}
+  });
+
+  // Category compare
+  const mayCats={}, junCats={};
+  byMonth(expenses(),'2026-05').forEach(t=>{mayCats[t.category]=(mayCats[t.category]||0)+Math.abs(t.amount);});
+  byMonth(expenses(),'2026-06').forEach(t=>{junCats[t.category]=(junCats[t.category]||0)+Math.abs(t.amount);});
+  const allCats=[...new Set([...Object.keys(mayCats),...Object.keys(junCats)])].filter(c=>c!=='TRANSFER');
+  new Chart(document.getElementById('catCompare'),{
+    type:'bar',
+    data:{labels:allCats,datasets:[
+      {label:'May',data:allCats.map(c=>mayCats[c]||0),backgroundColor:'rgba(124,106,245,0.7)',borderRadius:3,borderWidth:0},
+      {label:'Jun',data:allCats.map(c=>junCats[c]||0),backgroundColor:'rgba(52,152,219,0.7)',borderRadius:3,borderWidth:0},
+    ]},
+    options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{labels:{color:'#9896a0',font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:ctx=>' '+fmt(ctx.raw)}}},scales:{x:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#9896a0',font:{size:9},callback:v=>'₹'+Math.round(v/1000)+'k'}},y:{grid:{display:false},ticks:{color:'#9896a0',font:{size:9}}}}}
+  });
+}
+
+// ═══════════════════════════════════════════════
+// CSV IMPORT
+// ═══════════════════════════════════════════════
+function handleFile(e){ const f=e.target.files[0]; if(f) readCSV(f); }
+function handleDrop(e){
+  e.preventDefault();
+  document.getElementById('import-zone').classList.remove('dragover');
+  const f=e.dataTransfer.files[0];
+  if(f) readCSV(f);
+}
+function readCSV(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const text=e.target.result;
+    const lines=text.trim().split('\n');
+    const headers=lines[0].split(';').map(h=>h.trim());
+    const newTx=[];
+    for(let i=1;i<lines.length;i++){
+      const vals=lines[i].split(';');
+      const row={};
+      headers.forEach((h,j)=>row[h]=vals[j]||'');
+      if(!row.account) continue;
+      const dateStr=row.date?row.date.substring(0,10):'';
+      newTx.push({
+        date:dateStr,
+        account:row.account,
+        category:row.category||'',
+        note:row.note||'',
+        amount:parseFloat(row.amount)||0,
+        type:row.type||'',
+        transfer:row.transfer==='true'||row.transfer===true
+      });
+    }
+    // Merge — deduplicate by date+account+amount+note
+    const existing=new Set(TRANSACTIONS.map(t=>`${t.date}|${t.account}|${t.amount}|${t.note}`));
+    const added=newTx.filter(t=>!existing.has(`${t.date}|${t.account}|${t.amount}|${t.note}`));
+    TRANSACTIONS=[...added,...TRANSACTIONS].sort((a,b)=>b.date.localeCompare(a.date));
+    const logEl=document.getElementById('import-log');
+    const d=new Date().toLocaleDateString();
+    logEl.innerHTML+=`<div style="color:var(--green)">✓ ${file.name} — ${added.length} new transactions merged (${d})</div>`;
+    toast(`✓ ${added.length} new transactions imported`);
+    // Reinit dashboard charts
+    setTimeout(()=>{ if(document.getElementById('page-dashboard').classList.contains('active')) location.reload(); },1000);
+  };
+  reader.readAsText(file);
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+initDashboard();
+</script>
+</body>
+</html>
