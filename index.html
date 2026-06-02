@@ -437,7 +437,7 @@ input:focus,select:focus,textarea:focus{border-color:var(--accent)}
 // ═══════════════════════════════════════════════
 const SUPABASE_URL = 'https://bsudcgfvywvirquhasmd.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJzdWRjZ2Z2eXd2aXJxdWhhc21kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA0MTQwNzAsImV4cCI6MjA5NTk5MDA3MH0.M66d4ajfPFEEEwSqa2PBmrcLkwCuyGEGQanUNlQIkgM';
-const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let sb = null; // initialized in boot()
 
 // ═══════════════════════════════════════════════
 // DATA (in-memory, loaded from Supabase on boot)
@@ -1280,11 +1280,27 @@ function downloadAccountReport(){
 
 async function boot(){
   // Show loading state
-  document.getElementById('dash-cards').innerHTML='<div style="color:var(--text3);font-size:12px;padding:20px 0">Loading from database...</div>';
+  document.getElementById('dash-cards').innerHTML='<div style="color:var(--text3);font-size:12px;padding:20px 0">Connecting to database...</div>';
+
+  // Safety check — supabase CDN must be loaded
+  if(typeof supabase === 'undefined' || typeof supabase.createClient === 'undefined'){
+    document.getElementById('dash-cards').innerHTML='<div style="color:var(--red);font-size:12px;padding:20px 0">⚠ Supabase library not loaded. Check internet connection.</div>';
+    initDashboard(); return;
+  }
+
+  // Initialize client here so CDN is guaranteed loaded
+  try {
+    sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  } catch(e){
+    document.getElementById('dash-cards').innerHTML=`<div style="color:var(--red);font-size:12px;padding:20px 0">⚠ Failed to init Supabase: ${e.message}</div>`;
+    initDashboard(); return;
+  }
 
   try {
     // Load transactions
-    const {data:txData}=await sb.from('transactions').select('*').order('date',{ascending:false});
+    const {data:txData, error:txErr}=await sb.from('transactions').select('*').order('date',{ascending:false});
+    if(txErr) throw txErr;
+    console.log('txData count:', txData?.length);
     if(txData&&txData.length>0){
       TRANSACTIONS=[...txData.map(t=>({
         date:t.date,account:t.account,category:t.category||'',
@@ -1293,18 +1309,21 @@ async function boot(){
     }
 
     // Load bills
-    const {data:billData}=await sb.from('bills').select('*').order('due_date');
+    const {data:billData, error:billErr}=await sb.from('bills').select('*').order('due_date');
+    if(billErr) console.warn('Bills error:',billErr);
     if(billData) BILLS=billData.map(b=>({id:b.id,name:b.name,amount:Number(b.amount),date:b.due_date,paid:b.paid}));
 
     // Load debts
-    const {data:debtData}=await sb.from('debts').select('*').order('created_at');
+    const {data:debtData, error:debtErr}=await sb.from('debts').select('*').order('created_at');
+    if(debtErr) console.warn('Debts error:',debtErr);
     if(debtData){
       DEBTS.owe=debtData.filter(d=>d.direction==='owe').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
       DEBTS.owed=debtData.filter(d=>d.direction==='owed').map(d=>({id:d.id,person:d.person,total:Number(d.total),paid:Number(d.paid),monthly:Number(d.monthly||0),note:d.note||''}));
     }
 
     // Load balances
-    const {data:balData}=await sb.from('balances').select('*');
+    const {data:balData, error:balErr}=await sb.from('balances').select('*');
+    if(balErr) console.warn('Balances error:',balErr);
     if(balData) balData.forEach(b=>{BALANCES[b.account]=Number(b.balance);});
 
     // Update sidebar balances and account cards
@@ -1316,8 +1335,10 @@ async function boot(){
     document.getElementById('import-log').innerHTML=`<div style="color:var(--green)">✓ Loaded ${txCount} transactions from database</div>`;
 
   } catch(err){
-    console.error('Boot error:',err);
-    document.getElementById('import-log').innerHTML=`<div style="color:var(--red)">⚠ Could not connect to database. Check your Supabase keys in index.html</div>`;
+    console.error('Boot error:', err);
+    const errMsg = err?.message || JSON.stringify(err) || 'Unknown error';
+    document.getElementById('dash-cards').innerHTML=`<div style="color:var(--red);font-size:12px;padding:20px 0">⚠ DB Error: ${errMsg}</div>`;
+    document.getElementById('import-log').innerHTML=`<div style="color:var(--red)">⚠ ${errMsg}</div>`;
   }
 
   renderAccountCards();
@@ -1339,7 +1360,7 @@ async function updateBalance(account, newVal){
   toast(`${account} balance updated`);
 }
 
-boot();
+window.addEventListener('load', boot);
 </script>
 </body>
 </html>
