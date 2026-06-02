@@ -6,7 +6,7 @@
 <title>fintrack — Personal Finance Tracker</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -1283,16 +1283,20 @@ async function boot(){
   document.getElementById('dash-cards').innerHTML='<div style="color:var(--text3);font-size:12px;padding:20px 0">Connecting to database...</div>';
 
   // Safety check — supabase CDN must be loaded
-  if(typeof supabase === 'undefined' || typeof supabase.createClient === 'undefined'){
-    document.getElementById('dash-cards').innerHTML='<div style="color:var(--red);font-size:12px;padding:20px 0">⚠ Supabase library not loaded. Check internet connection.</div>';
+  if(typeof supabase === 'undefined' && typeof Supabase === 'undefined'){
+    document.getElementById('dash-cards').innerHTML='<div style="color:var(--red);font-size:12px;padding:20px 0">⚠ Supabase CDN not loaded.</div>';
     initDashboard(); return;
   }
 
-  // Initialize client here so CDN is guaranteed loaded
+  // Initialize client — handle both CDN export styles
   try {
-    sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const sbLib = window.supabase || window.Supabase;
+    const createFn = sbLib?.createClient || sbLib?.default?.createClient;
+    if(!createFn) throw new Error('createClient not found on window.supabase. CDN may have changed.');
+    sb = createFn(SUPABASE_URL, SUPABASE_KEY);
   } catch(e){
     document.getElementById('dash-cards').innerHTML=`<div style="color:var(--red);font-size:12px;padding:20px 0">⚠ Failed to init Supabase: ${e.message}</div>`;
+    console.error('Supabase init error:', e);
     initDashboard(); return;
   }
 
@@ -1360,7 +1364,12 @@ async function updateBalance(account, newVal){
   toast(`${account} balance updated`);
 }
 
-window.addEventListener('load', boot);
+// Run boot when DOM + scripts ready
+if(document.readyState === 'complete'){
+  boot();
+} else {
+  window.addEventListener('load', boot);
+}
 </script>
 </body>
 </html>
